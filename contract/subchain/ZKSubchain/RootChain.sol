@@ -6,7 +6,7 @@ import './Transaction.sol';
 import './PriorityQueue.sol';
 import './SafeMath.sol';
 
-/** The template of one contract. Please foloow the order to create one contract 
+/** The template of one contract. Please follow the order to create one contract 
  * refer to: solidity offical website https://solidity.readthedocs.io/en/v0.4.24/style-guide.html?highlight=private%20view#
 contract A {
     function A() public {
@@ -39,7 +39,7 @@ contract A {
 
 
 /**
-@title ZKRootChain: zero knowledge proot subchain smart contract
+@title ZKRootChain: zero knowledge proof subchain smart contract
 @notice: deposit, challege, exit
 @dev 
 */
@@ -59,7 +59,7 @@ contract ZKRootChain {
     address private _owner;
 
     /**@dev operator */
-    uint256 public opLen;
+    uint256 public opsLen;
     uint256 public miniDeposit;
     
     mapping (address => uint256) public operators;
@@ -114,13 +114,14 @@ contract ZKRootChain {
 
 
     /**@dev Restrict some access to only operator or owner*/
-    modifier onlyOwer() {
+    modifier onlyOwner() {
         require (
             msg.sender == _owner,
             "Only owner can call this"
         );
         _;
     }
+
     modifier onlyOperator() {
         require(
             operator[msg.sender] > 0,
@@ -135,7 +136,7 @@ contract ZKRootChain {
      * all operators with related desposit will be used to intiate the subchain
      * operators map all operators of subchain with their deposit
      */
-    constructor(address[] ops, uint256[] deposits) public {
+    constructor(address[] ops, uint256[] deposits) public payable {
         uint256 amount = 0; // the total amount of subchain deposit
         for (uint256 i = 0; i < ops.length && isValidOperator(ops[i], deposits[i]); i++) {
             operators[ops[i]] = deposits[i]; 
@@ -143,7 +144,7 @@ contract ZKRootChain {
         }
         require(msg.value >= amount.mul(SAFEDEPOSITSCALE)); 
         _owner = msg.sender;
-        opslen = ops.length;
+        opsLen = ops.length;
     }
 
     
