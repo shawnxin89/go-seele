@@ -134,7 +134,8 @@ func GenerateKeyPair() (*common.Address, *ecdsa.PrivateKey, error) {
 
 // GetAddress gets an address from the given public key
 func GetAddress(key *ecdsa.PublicKey) *common.Address {
-	addr := common.PubKeyToAddress(key, MustHash)
+	//addr := common.PubKeyToAddress(key, MustHash)
+	addr := common.PubKeyToAddress(key, Keccak256Hash)
 	return &addr
 }
 

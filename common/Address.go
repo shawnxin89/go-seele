@@ -61,24 +61,24 @@ func NewAddress(b []byte) (Address, error) {
 	var id Address
 	copy(id[:], b)
 
-	if err := id.Validate(); err != nil {
+	/*if err := id.Validate(); err != nil {
 		return EmptyAddress, err
-	}
+	}*/
 
 	return id, nil
 }
 
 // PubKeyToAddress converts a ECC public key to an external address.
-func PubKeyToAddress(pubKey *ecdsa.PublicKey, hashFunc func(interface{}) Hash) Address {
+func PubKeyToAddress(pubKey *ecdsa.PublicKey, hashFunc func(...[]byte) Hash) Address { //func(interface{}) Hash
 	buf := elliptic.Marshal(pubKey.Curve, pubKey.X, pubKey.Y)
 	hash := hashFunc(buf[1:]).Bytes()
-
+	
 	var addr Address
 	copy(addr[:], hash[12:]) // use last 20 bytes of public key hash
 
 	// set address type in the last 4 bits
-	addr[19] &= 0xF0
-	addr[19] |= byte(AddressTypeExternal)
+	//addr[19] &= 0xF0
+	//addr[19] |= byte(AddressTypeExternal)
 
 	return addr
 }

@@ -6,6 +6,7 @@
 package crypto
 
 import (
+	"fmt"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"math/big"
@@ -60,7 +61,8 @@ func (s Signature) Verify(signer common.Address, hash []byte) bool {
 	if err != nil {
 		return false // Signature was modified
 	}
-
+	fmt.Printf("test public key: %s\n", GetAddress(pubKey).Hex())
+	fmt.Printf("expected public key: %s\n", signer.Hex())
 	if !GetAddress(pubKey).Equal(signer) {
 		return false
 	}
