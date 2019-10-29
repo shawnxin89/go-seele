@@ -19,6 +19,18 @@ library StemChallenge {
     using PriorityQueue for uint256[];
     using SafeMath for uint256;
 
+    /**
+    * @dev Process new child block challenge
+    * @param _challengeTarget The challenge target
+    * @param _inspecBlock  The block containing the inspec tx (structure: creator/txTreeRoot/stateTreeRoot)
+    * @param _inspecBlockSignature  The block signature signed by the block producer
+    * @param _inspecTxHash  The tx hash provided by the challenger(default 0x0)
+    * @param _inspecTxIndex The index of the tx in the merkle tree
+    * @param _txInclusionProof The merkle tree inclusion proof
+    * @param _inspecState   The state of the target address after the inspec tx
+    * @param _inspecStateIndex The index of the state in the merkle tree
+    * @param _stateInclusionProof The merkle tree inclusion proof
+     */
     function processChallenge(StemCore.ChainStorage storage self, address _challengeTarget, bytes _inspecBlock, bytes _inspecBlockSignature, bytes32 _inspecTxHash, uint256 _inspecTxIndex, bytes _txInclusionProof, bytes _inspecState, uint256 _inspecStateIndex, bytes _stateInclusionProof) 
     public {
         // make sure it is within challenge submission period
@@ -38,6 +50,13 @@ library StemChallenge {
         createChildBlockChallenge(self, msg.sender, _challengeTarget, _inspecTxHash, _inspecState);
     }
 
+    /**
+    * @dev Create new child block challenge
+    * @param _challengerAddress The address of the challenger
+    * @param _challengeTarget The challenge target
+    * @param _inspecTxHash  The tx hash provided by the challenger(default 0x0)
+    * @param _inspecState   The state of the target address after the inspec tx
+     */
     function createChildBlockChallenge(StemCore.ChainStorage storage self, address _challengerAddress, address _challengeTarget, bytes32 _inspecTxHash, bytes _inspecState) internal {
         StemCore.ChildBlockChallenge memory newChallenge = StemCore.ChildBlockChallenge({
             challengerAddress: _challengerAddress,
@@ -84,8 +103,18 @@ library StemChallenge {
         return uint192((uint256(_infoHash) >> 105) | (_pos << 152));
     }
 
+    /**
+    * @dev Handle the response to block challenges. If the response is valid, remove the corresponding challenge
+    * @param _msgSender The reponse submitter
+    * @param _challengeIndex The index of the challenge(TODO: change it the challenge ID)
+    * @param _recentTxs Txs during the last interval
+    * @param _signatures Tx signatures
+    * @param _indices   The indices of the leaves in the merkle trees (tx tree/previous State tree/new state tree)
+    * @param _preState  RLP encoded previous state (account:balance:nonce)
+    * @param _inclusionProofs The inclusion proofs of rencentTxs/previous State/Current State
+     */
     function handleResponseToChallenge(StemCore.ChainStorage storage self, address _msgSender, uint _challengeIndex, bytes _recentTxs, bytes _signatures, bytes _indices, bytes _preState, bytes _inclusionProofs) public {
-        require(block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) <= self.childBlockChallengePeriod, "Not in challenge period");
+        //require(block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) <= self.childBlockChallengePeriod, "Not in challenge period");
         require(self.childBlockChallengeId.length > _challengeIndex, "Invalid challenge index");
         // 0: txLeafIndex, 1: preStateLeafIndex, 2: stateLeafIndex
         RLP.RLPItem[] memory indices = _indices.toRLPItem().toList();
@@ -94,14 +123,16 @@ library StemChallenge {
         //verifyPreState(self, _preState, proofs[1].toData(), indices[1].toUint());
         require(Merkle.checkMembership(keccak256(_recentTxs), indices[0].toUint(), self.childBlocks[self.lastChildBlockNum].txTreeRoot, proofs[0].toData()), "Failed to prove the inclusion of the txs");
         // verify recent txs and get the expected current balance
-        //bytes memory actualState = verifyRecentTxs(self, _challengeIndex, _preState, _recentTxs.toRLPItem().toList(), _signatures.toRLPItem().toList());
+        bytes memory actualState = verifyRecentTxs(self, _challengeIndex, _preState, _recentTxs.toRLPItem().toList(), _signatures.toRLPItem().toList());
 
         // encode actualState
-        //require(Merkle.checkMembership(keccak256(actualState), indices[1].toUint(), self.childBlocks[self.lastChildBlockNum].balanceTreeRoot, proofs[2].toData()), "Failed to prove the inclusion of the state");
+        require(Merkle.checkMembership(keccak256(actualState), indices[1].toUint(), self.childBlocks[self.lastChildBlockNum].balanceTreeRoot, proofs[2].toData()), "Failed to prove the inclusion of the state");
 
         // respond to the block challenge successfully
-        //_msgSender.transfer(self.blockChallengeBond);
-        //removeChildBlockChallengeByIndex(self, _challengeIndex);
+        // for test only
+        _msgSender = 0x583031D1113aD414F02576BD6afaBfb302140225;
+        _msgSender.transfer(self.blockChallengeBond);
+        removeChildBlockChallengeByIndex(self, _challengeIndex);
 
     }
 
@@ -114,30 +145,27 @@ library StemChallenge {
     function verifyPreState(StemCore.ChainStorage storage self, bytes _preState, bytes _preStateInclusionProof, uint256 _preStateIndex) internal view {
         uint256 lastConfirmedBlkNum = StemCore.getLastConfirmedChildBlockNumber(self);
         require(Merkle.checkMembership(keccak256(_preState), _preStateIndex, self.childBlocks[lastConfirmedBlkNum].balanceTreeRoot, _preStateInclusionProof));
+        // TODO compare preState balance with the balance at last confirmed block (operaters[account] or users[account])
     }
 
      /**
     * @dev Verify txs of target account during last interval
     * @param _challengeIndex The index of the challenge
     * @param _preState The state of target account at the beginning of last interval
-    * @param splitRecentTxs The transactions of target account during last interval
-    * @param splitSignatures The signatures of the tx senders
+    * @param _splitRecentTxs The transactions of target account during last interval
+    * @param _splitSignatures The signatures of the tx senders
     * @return the balance of target account after applying all txs
     */
-    function verifyRecentTxs(StemCore.ChainStorage storage self, uint _challengeIndex, bytes _preState, RLP.RLPItem[] memory splitRecentTxs, RLP.RLPItem[] memory splitSignatures) internal view returns(bytes) {
+    function verifyRecentTxs(StemCore.ChainStorage storage self, uint _challengeIndex, bytes _preState, RLP.RLPItem[] memory _splitRecentTxs, RLP.RLPItem[] memory _splitSignatures) internal view returns(bytes) {
 
         //uint256 actualBalance = _getBalanceByChallengeIndex(_challengeIndex);
         // TODO: require expectedBalance in a certain range, need to consider gas cost
         //require(actualBalance == expectedBalance, "Invalid balance");
 
-        //uint192 challengeId = childBlockChallengeId[_challengeIndex];
         StemCore.ChildBlockChallenge memory challenge = self.childBlockChallenges[self.childBlockChallengeId[_challengeIndex]];
 
-        //RLP.RLPItem[] memory splitRecentTxs = _recentTxs.toRLPItem().toList();
-        //RLP.RLPItem[] memory splitSignatures = _signatures.toRLPItem().toList();
-        require(splitRecentTxs.length == splitSignatures.length);
+        require(_splitRecentTxs.length == _splitSignatures.length);
 
-        // TODO: decode _preState to get Account, tempBalance and tempNonce
         RLP.RLPItem[] memory decodedPreState = _preState.toRLPItem().toList();
         require(challenge.challengeTarget == decodedPreState[0].toAddress());
 
@@ -145,31 +173,38 @@ library StemChallenge {
         uint256 tempNonce = decodedPreState[2].toUint();
         uint256 inspecTxCount = 0;
         RLP.RLPItem[] memory decodedInspecState;
-        for (uint i = 0; i < splitRecentTxs.length; i++) {
-            tempBalance = _verifySingleTx(tempBalance, tempNonce, challenge.challengeTarget, splitRecentTxs[i], splitSignatures[i]);
-            tempNonce.add(1);
+        for (uint i = 0; i < _splitRecentTxs.length; i++) {
+            tempBalance = _verifySingleTx(tempBalance, tempNonce, challenge.challengeTarget, _splitRecentTxs[i], _splitSignatures[i]);
+            tempNonce = tempNonce.add(1);
             //TODO consider the case that inspecTxHash is nil
-            if (challenge.inspecTxHash == keccak256(splitRecentTxs[i].toData())) {
-                inspecTxCount.add(1);
+            if (challenge.inspecTxHash == keccak256(_splitRecentTxs[i].toBytes())) {
+                inspecTxCount = inspecTxCount.add(1);
                 //TODO: require tempBalance to be in a reasonable range
                 decodedInspecState = challenge.inspecState.toRLPItem().toList();
                 require(tempBalance == decodedInspecState[1].toUint());
             }
         }
 
-        // require recent txs include inspec tx
-        require(inspecTxCount == 1);
+        // require recent txs to include inspec tx
+        // TODO consider the case that inspecTxHash is nil
+        require(inspecTxCount == uint256(1));
+        // TODO compare tempBalance with the balance of the target account (operaters[account] or users[account])
         return _encodeState(challenge.challengeTarget, tempBalance, tempNonce);
     }
 
     /**
+    * @dev RLP encode account, balance and nonce into an account state
+    * @param _account Account
+    * @param _balance Balance
+    * @param _nonce  Nonce
+    * @return the bytes of the RLP encoded state
      */
-    function _encodeState(address account, uint256 balance, uint256 nonce) internal pure returns(bytes) {
-        bytes[] memory actualStateArray = new bytes[](3);
-        actualStateArray[0] = account.encodeAddress();
-        actualStateArray[1] = balance.encodeUint();
-        actualStateArray[2] = nonce.encodeUint();
-        return actualStateArray.encodeList();
+    function _encodeState(address _account, uint256 _balance, uint256 _nonce) internal pure returns(bytes) {
+        bytes[] memory stateArray = new bytes[](3);
+        stateArray[0] = _account.encodeAddress();
+        stateArray[1] = _balance.encodeUint();
+        stateArray[2] = _nonce.encodeUint();
+        return stateArray.encodeList();
     }
 
     /**
@@ -179,7 +214,7 @@ library StemChallenge {
     * @param _targetAccount The account the challenger wants to examine
     * @param _tx The transaction
     * @param _signature The signature of the tx sender
-    * @return the balance and nonce of target account after tx
+    * @return the balance of target account after tx
     */
     function _verifySingleTx(uint256 _balanceBeforeTx, uint256 _nonceBeforeTx, address _targetAccount, RLP.RLPItem memory _tx, RLP.RLPItem memory _signature) internal pure returns(uint256) {
 
@@ -193,9 +228,9 @@ library StemChallenge {
         require(_targetAccount == from || _targetAccount == to, "The target account is neither a sender nor a receiver");
 
         // verify the signature
-        require(from == ECRecovery.recover(keccak256(_tx.toBytes()), _signature.toBytes()), "Invalid signature");
+        require(from == ECRecovery.recover(keccak256(_tx.toBytes()), _signature.toData()), "Invalid signature");
         if (_targetAccount == from) {
-            uint256 cost = computeCost(txItems); //amount.add(gasPrice.mul(gasLimit));
+            uint256 cost = computeCost(txItems);
             require(_balanceBeforeTx >= cost, "Balance not enough");
             return _balanceBeforeTx.sub(cost);
         } else {
@@ -204,11 +239,13 @@ library StemChallenge {
     }
 
     /**
+    * @dev Compute the cost of a tx
+    * @param _txItems The tx
      */
-    function computeCost(RLP.RLPItem[] memory txItems) internal pure returns(uint256) {
-        uint256 amount = txItems[2].toUint();
-        uint256 gasPrice = txItems[3].toUint();
-        uint256 gasLimit = txItems[4].toUint();
+    function computeCost(RLP.RLPItem[] memory _txItems) internal pure returns(uint256) {
+        uint256 amount = _txItems[2].toUint();
+        uint256 gasPrice = _txItems[3].toUint();
+        uint256 gasLimit = _txItems[4].toUint();
         return amount.add(gasPrice.mul(gasLimit));
     }
 

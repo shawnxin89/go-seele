@@ -8,6 +8,7 @@ var StemCore = artifacts.require("./StemCore.sol");
 var StemChallenge = artifacts.require("./StemChallenge.sol");
 var StemRelay = artifacts.require("./StemRelay.sol");
 var StemRootchain = artifacts.require("./StemRootchain.sol");
+var SandboxStemRootchain = artifacts.require("./SandboxStemRootchain.sol");
 var StemCreation = artifacts.require("./StemCreation.sol");
 
 module.exports = function(deployer, network, accounts) {
@@ -56,4 +57,11 @@ module.exports = function(deployer, network, accounts) {
   // deployer.deploy(StemRootchain, "416e6e6965", "0x4f2df4a21621b18c71619239c398657a23f198a40a8deff701e340e6e34d0823", "0x4f2df4a21621b18c71619239c398657a23f198a40a8deff701e340e6e34d0823", ["107.105.20.39"], "1000000", ["0x000000000000000000000000000000000000000", "0x627306090abab3a6e1400e9345bc60c78a8bef57", "0x4b0897b0513fdc7c541b6d9d7e929c4e5364d2db", "0x583031d1113ad414f02576bd6afabfb302140225"], ["1234567890", "1234567890", "1234567890", "1234567890"], {value: 1234567890});
   
   deployer.deploy(StemRootchain, "416e6e6965", "0x4f2df4a21621b18c71619239c398657a23f198a40a8deff701e340e6e34d0823", "0x4f2df4a21621b18c71619239c398657a23f198a40a8deff701e340e6e34d0823", ["107.105.20.39"], "1000", ["0xca35b7d915458ef540ade6068dfe2f44e8fa733c", "0x627306090abab3a6e1400e9345bc60c78a8bef57", "0x4b0897b0513fdc7c541b6d9d7e929c4e5364d2db", "0x583031d1113ad414f02576bd6afabfb302140225"], ["1234567890", "1234567890", "1234567890", "1234567890"], {from: accounts[2], value: 8234567890, gas:6500000});
+  
+  deployer.link(RLPEncoding, SandboxStemRootchain)
+  deployer.link(StemCore, SandboxStemRootchain);
+  deployer.link(StemChallenge, SandboxStemRootchain);
+  deployer.link(StemRelay, SandboxStemRootchain);
+  deployer.link(StemCreation, SandboxStemRootchain);
+  deployer.deploy(SandboxStemRootchain, "416e6e6965", "0x4f2df4a21621b18c71619239c398657a23f198a40a8deff701e340e6e34d0823", "0x4f2df4a21621b18c71619239c398657a23f198a40a8deff701e340e6e34d0823", ["107.105.20.39"], "1000", ["0xca35b7d915458ef540ade6068dfe2f44e8fa733c", "0x627306090abab3a6e1400e9345bc60c78a8bef57", "0x4b0897b0513fdc7c541b6d9d7e929c4e5364d2db", "0x583031d1113ad414f02576bd6afabfb302140225"], ["1234567890", "1234567890", "1234567890", "1234567890"], {from: accounts[2], value: 8234567890, gas:6500000});  
 };
