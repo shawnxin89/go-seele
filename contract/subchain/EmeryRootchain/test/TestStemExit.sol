@@ -4,7 +4,7 @@ import "truffle/Assert.sol";
 import "truffle/DeployedAddresses.sol";
 import "../contracts/StemRootchain.sol";
 
-contract TestStemOperatorExit {
+contract TestStemExit {
 
   uint256 public initialBalance = 88234567890;
 

@@ -69,16 +69,16 @@ contract SandboxStemRootchain {
      * @dev The rootchain constructor creates the rootchain
      * contract and initialize the owner and operators.
      * @param _subchainName Is the name of the subchain
-     * @param _genesisBalanceTreeRoot Is the hash of the genesis balance tree root
-     * @param _genesisTxTreeRoot Is the hash of the genesis tx tree root
+     * @param _genesisInfo [BalanceTreeRoot, TxTreeRoot]
      * @param _staticNodes Is the static nodes
      * @param _creatorDeposit Is the deposit of creator
      * @param _ops Is the operators.
      * @param _opsDeposits Is the deposits of operators.
+     * @param _refundAccounts The operators' mainnet addresses
      */
-    constructor(bytes32 _subchainName, bytes32 _genesisBalanceTreeRoot, bytes32 _genesisTxTreeRoot, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits)
+    constructor(bytes32 _subchainName, bytes32[] _genesisInfo, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits, address[] _refundAccounts)
     public payable {
-        StemCreation.createSubchain(data, msg.value, msg.sender, _subchainName, _genesisBalanceTreeRoot, _genesisTxTreeRoot, _staticNodes, _creatorDeposit, _ops, _opsDeposits);
+        StemCreation.createSubchain(data, msg.value, msg.sender, _subchainName, _genesisInfo, _staticNodes, _creatorDeposit, _ops, _opsDeposits, _refundAccounts);
         // submit block[1000]
         address[] memory testAddresses0;
         uint256[] memory testBalances0;

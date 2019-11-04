@@ -43,6 +43,7 @@ library StemCore {
         uint256 amount;
         uint256 blkNum;
         bool    isOperator;
+        address refundAccount;
     }
 
     struct ChainStorage {
@@ -93,6 +94,8 @@ library StemCore {
         uint256 userMinDeposit;
         uint256 userExitBond;
 
+        mapping(address => address) refundAddress;
+
         mapping(address => Exit) exits;
         address[] exitsIndices;
 
@@ -112,6 +115,9 @@ library StemCore {
         bytes32 balanceTreeRoot;
     }
 
+    /**
+    * @dev Initialize the contract parameters
+     */
     function init(ChainStorage storage self) internal {
         self.MIN_LENGTH_OPERATOR = 1;
         self.MAX_LENGTH_OPERATOR = 100;
@@ -129,7 +135,13 @@ library StemCore {
         self.userExitBond = 1234567890;
     }
 
-    function createAddOperatorRequest(ChainStorage storage self, uint256 _msgValue, address _operator) public {
+    /**
+    * @dev  create an AddOperator request
+    * @param _msgValue      Deposit value
+    * @param _operator      Operator address
+    * @param _refundAccount The account to get the fund back
+    */
+    function createAddOperatorRequest(ChainStorage storage self, uint256 _msgValue, address _operator, address _refundAccount) public {
         //require(msg.sender == _operator || msg.sender == self.owner, "Requests should be sent by the operator or the creator");
         require(self.IS_NEW_OPERATOR_ALLOWED, "Adding new operator is not allowed");
         require(self.isExistedOperators[_operator] == false, "Repeated operator");
@@ -144,7 +156,8 @@ library StemCore {
         self.deposits[_operator] = Deposit({
             amount: _msgValue,
             blkNum: self.curDepositBlockNum,
-            isOperator: true
+            isOperator: true,
+            refundAccount: _refundAccount
         });
 
         /*emit AddOperatorRequest(
@@ -154,7 +167,12 @@ library StemCore {
         );*/
     }
 
-    function createUserDepositRequest(ChainStorage storage self, address _user) internal {
+     /**
+    * @dev  create an userDeposit request
+    * @param _user      user address
+    * @param _refundAccount The account to get the fund back
+    */
+    function createUserDepositRequest(ChainStorage storage self, address _user, address _refundAccount) internal {
         //require(msg.sender == _user || msg.sender == self.owner, "Requests should be sent by the user or the creator");
         require(self.isExistedOperators[_user] == false, "This address has been registered as an operator");
         require(self.deposits[_user].amount == 0 || (self.deposits[_user].amount > 0 && self.deposits[_user].isOperator == false), "An addOperator request exists for this address");
@@ -177,18 +195,18 @@ library StemCore {
             // merge current deposit request with a previous exit request
             if (self.exits[_user].amount < depositAmount) {
                 depositAmount = depositAmount.sub(self.exits[_user].amount);
-                _user.transfer(self.exits[_user].amount);
+                self.refundAddress[_user].transfer(self.exits[_user].amount.add(self.userExitBond));
                 delete self.exits[_user];
                 // TODO: emit an event to cancel the older exit request
             } else if (self.exits[_user].amount > depositAmount) {
                 self.exits[_user].amount = self.exits[_user].amount.sub(depositAmount);
-                _user.transfer(depositAmount);
+                self.refundAddress[_user].transfer(depositAmount);
                 // TODO: emit an event to replace the older exit request
                 return;
             } else {
                 // exit request and deposit request cancel out each other
                 // TODO: emit an event to cancel exit request
-                _user.transfer(depositAmount);
+                self.refundAddress[_user].transfer(depositAmount.add(self.userExitBond));
                 delete self.exits[_user];
                 return;
             }
@@ -200,7 +218,8 @@ library StemCore {
         self.deposits[_user] = Deposit({
                 amount: depositAmount,
                 blkNum: self.curDepositBlockNum,
-                isOperator: false
+                isOperator: false,
+                refundAccount: _refundAccount
             });
 
         /*emit UserDepositRequest(
@@ -261,6 +280,10 @@ library StemCore {
         return self.nextChildBlockNum.add(self.nextDepositBlockIncrement);
     }
 
+    /**
+    * @dev Delete deposit index by account
+    * @param _account The account to deposit
+     */
     function deleteDepositsIndicesByAccount(ChainStorage storage self, address _account) internal {
         for (uint i = 0; i < self.depositsIndices.length; i++) {
             if (_account == self.depositsIndices[i]) {
@@ -305,6 +328,10 @@ library StemCore {
         }
     }
 
+    /**
+    * @dev Create an operator exit request. It's a complete exit.
+    * @param _operator The operator account
+     */
     function createOperatorExitRequest(ChainStorage storage self, address _operator) internal {
         //require(msg.sender == _operator, "Exit requests should be sent by the operator");
         require(self.isExistedOperators[_operator] || self.deposits[_operator].blkNum > self.nextChildBlockNum, "This operator does not exist and does not has any deposit request");
@@ -328,12 +355,12 @@ library StemCore {
         // merge with existing deposit or exit requests
         if (self.exits[_operator].blkNum > self.nextChildBlockNum) {
             // an operator exit already exists
-            _operator.transfer(self.operatorExitBond);
+            self.refundAddress[_operator].transfer(self.operatorExitBond);
             return;
         } else if (self.deposits[_operator].blkNum > self.nextChildBlockNum) {
             // exit request and deposit request cancel out each other
             // TODO: emit an event to cancel deposit request
-            _operator.transfer(self.deposits[_operator].amount.add(self.operatorExitBond));
+            self.refundAddress[_operator].transfer(self.deposits[_operator].amount.add(self.operatorExitBond));
             deleteDepositsIndicesByAccount(self, _operator);
             delete self.deposits[_operator];
             return;
@@ -355,6 +382,11 @@ library StemCore {
         //);
     }
 
+    /**
+    * @dev Create a user exit request
+    * @param _user User account
+    * @param _amount Exit amount
+     */
     function createUserExitRequest(ChainStorage storage self, address _user, uint256 _amount) public {
         //require(msg.sender == _user, "Exit requests should be sent by the user");
         require(self.isExistedUsers[_user] || self.deposits[_user].blkNum > self.nextChildBlockNum, "This user does not exist and does not has any deposit request");
@@ -365,7 +397,7 @@ library StemCore {
         if (self.exits[_user].blkNum > self.nextChildBlockNum) {
             // merge current exit request with a previous exit request
             self.exits[_user].amount = self.exits[_user].amount.add(exitAmount);
-            _user.transfer(self.userExitBond);
+            self.refundAddress[_user].transfer(self.userExitBond);
             // TODO: emit an event to replace the old exit request
             //emit UserDeposit(
             //    _user,
@@ -377,18 +409,18 @@ library StemCore {
             // merge current exit request with a previous deposit request
             if (self.deposits[_user].amount < exitAmount) {
                 exitAmount = exitAmount.sub(self.deposits[_user].amount);
-                _user.transfer(self.deposits[_user].amount);
+                self.refundAddress[_user].transfer(self.deposits[_user].amount);
                 deleteDepositsIndicesByAccount(self, _user);
                 delete self.deposits[_user];
             } else if (self.deposits[_user].amount > exitAmount) {
                 self.deposits[_user].amount = self.deposits[_user].amount.sub(exitAmount);
-                _user.transfer(exitAmount.add(self.userExitBond));
+                self.refundAddress[_user].transfer(exitAmount.add(self.userExitBond));
                 // TODO: emit an event to replace the older deposit request
                 return;
             } else {
                 // exit request and deposit request cancel out each other
                 // TODO: emit an event to cancel deposit request
-                _user.transfer(exitAmount.add(self.userExitBond));
+                self.refundAddress[_user].transfer(exitAmount.add(self.userExitBond));
                 deleteDepositsIndicesByAccount(self, _user);
                 delete self.deposits[_user];
                 return;
@@ -440,7 +472,7 @@ library StemCore {
             deleteExitsIndicesByAccount(self, _operator);
             delete self.exits[_operator];
         } else {
-            _operator.transfer(self.operatorFee[_operator].add(self.operators[_operator].add(self.operatorExitBond)));
+            self.refundAddress[_operator].transfer(self.operatorFee[_operator].add(self.operators[_operator].add(self.operatorExitBond)));
             delete self.operators[_operator];
             delete self.operatorFee[_operator];
             self.isExistedOperators[_operator] = false;
@@ -450,6 +482,10 @@ library StemCore {
         }
     }
 
+    /**
+    * @dev Delete exit index by the account
+    * @param _account The exit account
+     */
     function deleteExitsIndicesByAccount(ChainStorage storage self, address _account) internal {
         for (uint i = 0; i < self.exitsIndices.length; i++) {
             if (_account == self.exitsIndices[i]) {
@@ -460,6 +496,10 @@ library StemCore {
         }
     }
 
+    /**
+    * @dev Delete operator index by the account
+    * @param _operator The operator account
+     */
     function deleteOperatorIndicesByAccount(ChainStorage storage self, address _operator) internal {
         for (uint i = 0; i < self.operatorIndices.length; i++) {
             if (_operator == self.operatorIndices[i]) {
@@ -484,7 +524,7 @@ library StemCore {
             deleteExitsIndicesByAccount(self, _user);
             delete self.exits[_user];
         } else {
-            _user.transfer(self.exits[_user].amount.add(self.userExitBond));
+            self.refundAddress[_user].transfer(self.exits[_user].amount.add(self.userExitBond));
             self.users[_user] = self.users[_user].sub(self.exits[_user].amount);
             self.totalDeposit = self.totalDeposit.sub(self.exits[_user].amount);
             self.exits[_user].executed = true;
@@ -492,7 +532,7 @@ library StemCore {
     }
 
     /**
-    * @dev Check whether there is an unresolved (in/pass the execution period) deposit/exit
+    * @dev Check whether there is an unresolved (still in or has passed the execution period) deposit/exit
     *      request for the input account
     * @param _account The account to check
     * @return true if there is an unresolved request
@@ -512,11 +552,10 @@ library StemCore {
     * @return The block height of last confirmed child block
     */
     function getLastConfirmedChildBlockNumber(ChainStorage storage self) public view returns(uint256) {
-        // TODO: add the case that challenge submission period is over and there is no remaining challenge
         if (isLastChildBlockConfirmed(self)) {
             return self.lastChildBlockNum;
         } else {
-            return self.nextChildBlockNum.sub(self.CHILD_BLOCK_INTERVAL.add(self.CHILD_BLOCK_INTERVAL));
+            return self.lastChildBlockNum.sub(self.CHILD_BLOCK_INTERVAL);
         }
     }
 
@@ -553,7 +592,7 @@ library StemCore {
         return self.nextChildBlockNum.sub(self.CHILD_BLOCK_INTERVAL);
     }
 
-     /**
+    /**
     * @dev Check whether last submitted child block is confirmed
     * @return true if last submitted child block is confirmed.
     */
@@ -561,6 +600,10 @@ library StemCore {
         return block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) >= self.childBlockChallengePeriod && self.childBlockChallengeId.length == 0;
     }
 
+    /**
+    * @dev Decode the RLP encoded inspec block
+    * @param _inspecBlock RLP(creator, txTreeRoot, balanceTreeRoot)
+     */
     function decode(bytes _inspecBlock) internal pure returns (InspecBlock)
     {
         RLP.RLPItem[] memory inputs = _inspecBlock.toRLPItem().toList();

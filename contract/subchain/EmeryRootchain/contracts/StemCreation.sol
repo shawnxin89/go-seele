@@ -1,29 +1,35 @@
 pragma solidity ^0.4.24;
 
 // external modules
-import "./ByteUtils.sol";
-import "./ECRecovery.sol";
-import "./Merkle.sol";
-import "./PriorityQueue.sol";
-import "./RLP.sol";
-import "./RLPEncoding.sol";
 import "./SafeMath.sol";
 import "./StemCore.sol";
 import "./StemChallenge.sol";
 
+// This library includes the construtor of a Stem contract
 library StemCreation {
-    using RLP for bytes;
-    using RLP for RLP.RLPItem;
-    using RLPEncoding for address;
-    using RLPEncoding for uint256;
-    using RLPEncoding for bytes[];
-    using PriorityQueue for uint256[];
     using SafeMath for uint256;
 
-    function createSubchain(StemCore.ChainStorage storage self, uint256 _msgValue, address _msgSender, bytes32 _subchainName, bytes32 _genesisBalanceTreeRoot, bytes32 _genesisTxTreeRoot, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits) public {
+     /**
+     * @dev The rootchain constructor creates the rootchain
+     * contract, initializing the owner and operators
+     * @param _msgValue The input amount from the creator
+     * @param _msgSender The contract creator
+     * @param _subchainName The name of the subchain
+     * @param _genesisInfo [balanceTreeRoot, TxTreeRoot]
+     *        The hash of the genesis balance tree root
+     *        The hash of the genesis tx tree root
+     * @param _staticNodes The static nodes
+     * @param _creatorDeposit The deposit of creator
+     * @param _ops The operators.
+     * @param _opsDeposits The deposits of operators.
+     * @param _refundAccounts The mainnet addresses of the operators
+     */
+    function createSubchain(StemCore.ChainStorage storage self, uint256 _msgValue, address _msgSender, bytes32 _subchainName, bytes32[] _genesisInfo, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits, address[]  _refundAccounts) public {
+        // initialize the storage variables
         StemCore.init(self);
         require(_ops.length >= self.MIN_LENGTH_OPERATOR && _ops.length <= self.MAX_LENGTH_OPERATOR, "Invalid operators length");
         require(_ops.length == _opsDeposits.length, "Invalid deposits length");
+        require(_ops.length == _refundAccounts.length, "Invalid length of refund accounts");
         require(_creatorDeposit >= self.creatorMinDeposit, "Insufficient creator deposit value");
 
         // Setup the operators' deposits and initial fees
@@ -35,6 +41,7 @@ library StemCreation {
             self.totalDeposit = self.totalDeposit.add(_opsDeposits[i]);
             self.isExistedOperators[_ops[i]] = true;
             self.operatorIndices.push(_ops[i]);
+            self.refundAddress[_ops[i]] = _refundAccounts[i];
         }
         require(_msgValue >= self.totalDeposit, "You don't give me enough money");
         self.owner = _msgSender;
@@ -47,8 +54,8 @@ library StemCreation {
         //Create the genesis block.
         self.childBlocks[submittedBlockNumber] = StemCore.ChildBlock({
             submitter: _msgSender,
-            balanceTreeRoot: _genesisBalanceTreeRoot,
-            txTreeRoot: _genesisTxTreeRoot,
+            balanceTreeRoot: _genesisInfo[0],
+            txTreeRoot: _genesisInfo[1],
             timestamp: block.timestamp
         });
 

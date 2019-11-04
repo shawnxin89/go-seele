@@ -12,7 +12,7 @@ contract TestStemUserExit {
         StemRootchain rootchain = StemRootchain(DeployedAddresses.StemRootchain());
         // cancel an existing deposit request
         address expectedUserAddress = 0x821aEa9a577a9b44299B9c15c88cf3087F3b5544;
-        rootchain.userDepositRequest.value(2234567890)(expectedUserAddress);
+        rootchain.userDepositRequest.value(2234567890)(expectedUserAddress, expectedUserAddress);
         uint256 expectedDepositBlk = 1001;
         Assert.equal(rootchain.getDepositBlockNum(expectedUserAddress), expectedDepositBlk, "expectedDepositBlk is 1001");
         uint256 expectedDepositAmount = 2234567890;
@@ -42,7 +42,7 @@ contract TestStemUserExit {
         address expectedUserAddress = 0x821aEa9a577a9b44299B9c15c88cf3087F3b5544;
         // the user doesn't exist in the subchain or in the deposits array
         //rootchain.userExitRequest.value(1234567890)(expectedUserAddress, 1000000000);
-        rootchain.userDepositRequest.value(2234567890)(expectedUserAddress);
+        rootchain.userDepositRequest.value(2234567890)(expectedUserAddress, expectedUserAddress);
         address[] memory testAddresses;
         uint256[] memory testBalances;
         rootchain.submitBlock.value(1234567890)(1000, 0x4f2df4a21621b18c71619239c398657a23f198a40a8deff701e340e6e34d1234, 0x4f2df4a21621b18c71619239c398657a23f198a40a8deff701e340e6e34d1234, testAddresses, testBalances, 0);

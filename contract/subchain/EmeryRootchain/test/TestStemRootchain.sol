@@ -51,8 +51,8 @@ contract TestStemRootchain {
     // registered address
     //address expectedOperatorAddress = 0xCA35b7d915458EF540aDe6068dFe2F44E8fa733c;
     // test insufficient deposit amount
-    // rootchain.addOperatorRequest.value(234567890)(expectedOperatorAddress);
-    rootchain.addOperatorRequest.value(2234567890)(expectedOperatorAddress);
+    // rootchain.addOperatorRequest.value(234567890)(expectedOperatorAddress, expectedOperatorAddress);
+    rootchain.addOperatorRequest.value(2234567890)(expectedOperatorAddress, expectedOperatorAddress);
     uint256 expectedDepositBlk = 1001;
     Assert.equal(rootchain.getDepositBlockNum(expectedOperatorAddress), expectedDepositBlk, "expectedDepositBlk is 1001");
     uint256 expectedDepositAmount = 2234567890;
@@ -60,7 +60,7 @@ contract TestStemRootchain {
     bool expectedDepositType = true;
     Assert.equal(rootchain.getDepositType(expectedOperatorAddress), expectedDepositType, "expectedDepositType = True");
     // this address exists for an existing request
-    //rootchain.addOperatorRequest.value(2234567890)(expectedOperatorAddress);
+    //rootchain.addOperatorRequest.value(2234567890)(expectedOperatorAddress, expectedOperatorAddress);
   }
 
   // To use this test function, please comment out require() that checks msg.sender
@@ -73,21 +73,21 @@ contract TestStemRootchain {
     // test an address previously used in addOperator request
     //address expectedUserAddress = 0xcEE66ad4a1909F6b5170DEc230c1A69BFC2B21d1;
     // test insufficient deposit amount
-    // rootchain.addOperatorRequest.value(234567890)(expectedOperatorAddress);
-    rootchain.userDepositRequest.value(2234567890)(expectedUserAddress);
+    // rootchain.addOperatorRequest.value(234567890)(expectedOperatorAddress, expectedOperatorAddress);
+    rootchain.userDepositRequest.value(2234567890)(expectedUserAddress, expectedUserAddress);
     uint256 expectedDepositBlk = 1002;
     Assert.equal(rootchain.getDepositBlockNum(expectedUserAddress), expectedDepositBlk, "expectedDepositBlk is 1002");
     uint256 expectedDepositAmount = 2234567890;
     Assert.equal(rootchain.getDepositAmount(expectedUserAddress), expectedDepositAmount, "expectedDepositAmount = 2234567890");
     bool expectedDepositType = false;
     Assert.equal(rootchain.getDepositType(expectedUserAddress), expectedDepositType, "expectedDepositType = False");
-    rootchain.userDepositRequest.value(2234567890)(expectedUserAddress);
+    rootchain.userDepositRequest.value(2234567890)(expectedUserAddress, expectedUserAddress);
     expectedDepositBlk = 1002;
     Assert.equal(rootchain.getDepositBlockNum(expectedUserAddress), expectedDepositBlk, "expectedDepositBlk is 1002");
     expectedDepositAmount = 4469135780;
     Assert.equal(rootchain.getDepositAmount(expectedUserAddress), expectedDepositAmount, "expectedDepositAmount = 4469135780");
     expectedUserAddress = 0x821aea9A577a9B44299B9c15c88CF3087F3b8888;
-    rootchain.userDepositRequest.value(2234567890)(expectedUserAddress);
+    rootchain.userDepositRequest.value(2234567890)(expectedUserAddress, expectedUserAddress);
     expectedDepositBlk = 1003;
     Assert.equal(rootchain.getDepositBlockNum(expectedUserAddress), expectedDepositBlk, "expectedDepositBlk is 1003");
 

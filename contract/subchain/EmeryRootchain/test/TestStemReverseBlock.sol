@@ -12,9 +12,9 @@ contract TestStemReverseBlock {
     function testReverseBlock() public {
         StemRootchain rootchain = StemRootchain(DeployedAddresses.StemRootchain());
         address expectedOperatorAddress = 0xcEE66ad4a1909F6b5170DEc230c1A69BFC2B21d1;
-        rootchain.addOperatorRequest.value(2234567890)(expectedOperatorAddress);
+        rootchain.addOperatorRequest.value(2234567890)(expectedOperatorAddress, expectedOperatorAddress);
         address expectedUserAddress = 0x821aea9A577a9B44299B9c15c88CF3087F3b8888;
-        rootchain.userDepositRequest.value(2234567890)(expectedUserAddress);
+        rootchain.userDepositRequest.value(2234567890)(expectedUserAddress, expectedUserAddress);
 
         // submit block[1000] and block[2000]
         address[] memory testAddresses = new address[](2);
@@ -55,7 +55,7 @@ contract TestStemReverseBlock {
 
         // try to add operator
         //expectedOperatorAddress = 0xCEe66ad4a1909F6b5170deC230C1a69Bfc2B2222;
-        //rootchain.addOperatorRequest.value(2234567890)(expectedOperatorAddress);
+        //rootchain.addOperatorRequest.value(2234567890)(expectedOperatorAddress, expectedOperatorAddress);
 
         // submit block[2000] again
         testAddresses[0] = 0xcEE66ad4a1909F6b5170DEc230c1A69BFC2B21d1;
@@ -71,7 +71,7 @@ contract TestStemReverseBlock {
         Assert.equal(rootchain.getChildBlockTxRootHash(2000), txRootHash, "txRootHash is 0x4f2df4a21621b18c71619239c398657a23f198a40a8deff701e340e6e34d1234");
 
         expectedOperatorAddress = 0xCEe66ad4a1909F6b5170deC230C1a69Bfc2B2222;
-        rootchain.addOperatorRequest.value(2234567890)(expectedOperatorAddress);
+        rootchain.addOperatorRequest.value(2234567890)(expectedOperatorAddress, expectedOperatorAddress);
     }
 
 }

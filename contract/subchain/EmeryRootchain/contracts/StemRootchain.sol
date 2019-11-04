@@ -1,12 +1,6 @@
 pragma solidity ^0.4.24;
 
 // external modules
-import "./ByteUtils.sol";
-import "./ECRecovery.sol";
-import "./Merkle.sol";
-import "./PriorityQueue.sol";
-import "./RLP.sol";
-import "./RLPEncoding.sol";
 import "./SafeMath.sol";
 import "./StemCore.sol";
 import "./StemRelay.sol";
@@ -14,17 +8,11 @@ import "./StemChallenge.sol";
 import "./StemCreation.sol";
 
 /// @title Stem subchain contract in Seele root chain
-/// @notice You can use this contract for a Stem subchain in Seele.
+/// @notice You can use this contract to manage a Seele Stem subchain
 /// @author seeledev
 
 contract StemRootchain {
-    using RLP for bytes;
-    using RLP for RLP.RLPItem;
-    using RLPEncoding for address;
-    using RLPEncoding for uint256;
-    using RLPEncoding for bytes[];
     using SafeMath for uint256;
-    using PriorityQueue for uint256[];
     using StemCore for bytes;
     using StemCore for StemCore.ChainStorage;
 
@@ -52,13 +40,13 @@ contract StemRootchain {
 
     /** @dev Reverts if called by any account other than the owner. */
     modifier onlyOwner() {
-        require(msg.sender == data.owner, "You're not the owner of the contract");
+        require(msg.sender == data.owner, "You're not the owner of the contract!");
          _;
     }
 
     /** @dev Reverts if called by any account other than the operator. */
     modifier onlyOperator() {
-        require(data.operators[msg.sender] > 0, "You're not the operator of the contract");
+        require(data.operators[msg.sender] > 0, "You're not the operator of the contract!");
         _;
     }
 
@@ -70,37 +58,41 @@ contract StemRootchain {
 
     /**
      * @dev The rootchain constructor creates the rootchain
-     * contract and initialize the owner and operators.
-     * @param _subchainName Is the name of the subchain
-     * @param _genesisBalanceTreeRoot Is the hash of the genesis balance tree root
-     * @param _genesisTxTreeRoot Is the hash of the genesis tx tree root
-     * @param _staticNodes Is the static nodes
-     * @param _creatorDeposit Is the deposit of creator
-     * @param _ops Is the operators.
-     * @param _opsDeposits Is the deposits of operators.
+     * contract, initializing the owner and operators.
+     * @param _subchainName The name of the subchain
+     * @param _genesisInfo [_genesisBalanceTreeRoot, _genesisTxTreeRoot]
+     *        The hash of the genesis balance tree root
+     *        The hash of the genesis tx tree root
+     * @param _staticNodes The static nodes
+     * @param _creatorDeposit The deposit of creator
+     * @param _ops The operators.
+     * @param _opsDeposits The deposits of operators.
+     * @param _refundAccounts The operators' mainnet addresses
      */
-    constructor(bytes32 _subchainName, bytes32 _genesisBalanceTreeRoot, bytes32 _genesisTxTreeRoot, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits)
+    constructor(bytes32 _subchainName, bytes32[] _genesisInfo, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits, address[] _refundAccounts)
     public payable {
-        StemCreation.createSubchain(data, msg.value, msg.sender, _subchainName, _genesisBalanceTreeRoot, _genesisTxTreeRoot, _staticNodes, _creatorDeposit, _ops, _opsDeposits);
+        StemCreation.createSubchain(data, msg.value, msg.sender, _subchainName, _genesisInfo, _staticNodes, _creatorDeposit, _ops, _opsDeposits, _refundAccounts);
     }
 
     /**
     * @dev Create a request to add new operator to the subchain
     * @param _operator The operator to be added
+    * @param _refundAccount The account where the fund will be returned
     */
-    function addOperatorRequest(address _operator) public payable {
-        data.createAddOperatorRequest(msg.value, _operator);
+    function addOperatorRequest(address _operator, address _refundAccount) public payable {
+        data.createAddOperatorRequest(msg.value, _operator, _refundAccount);
     }
 
     /**
     * @dev Allow user deposit to the subchain
     * @param _user The user account to deposit value
+    * @param _refundAccount The account where the fund will be returned
     */
-    function userDepositRequest(address _user) public payable {
-        data.createUserDepositRequest(_user);
+    function userDepositRequest(address _user, address _refundAccount) public payable {
+        data.createUserDepositRequest(_user, _refundAccount);
     }
 
-    /** x
+    /**
     * @dev Remove inactive deposit request
     * @param _account The associated account of the deposit to be removed
     */
@@ -120,6 +112,10 @@ contract StemRootchain {
         data.createOperatorExitRequest(_operator);
     }
 
+    /**
+    * @dev Execute operator exit request
+    * @param _operator The operator account to exit from
+    */
     function execOperatorExit(address _operator) public {
         data.executeOperatorExit(_operator);
     }
@@ -157,7 +153,7 @@ contract StemRootchain {
         //require(msg.sender == _operator, "Exit requests should be sent from the operator");
         require(data.isLastChildBlockConfirmed(), "Last block is not confirmed yet");
         require(data.operatorFee[_operator] >= _amount, "Invalid exit amount");
-        _operator.transfer(_amount);
+        data.refundAddress[_operator].transfer(_amount);
         data.operatorFee[_operator] = data.operatorFee[_operator].sub(_amount);
     }
 
