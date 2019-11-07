@@ -1,10 +1,6 @@
 pragma solidity ^0.4.24;
 
 // external modules
-import "./ByteUtils.sol";
-import "./ECRecovery.sol";
-import "./Merkle.sol";
-import "./PriorityQueue.sol";
 import "./RLP.sol";
 import "./RLPEncoding.sol";
 import "./SafeMath.sol";
@@ -15,7 +11,6 @@ library StemCore {
     using RLPEncoding for address;
     using RLPEncoding for uint256;
     using RLPEncoding for bytes[];
-    using PriorityQueue for uint256[];
     using SafeMath for uint256;
 
     struct ChildBlock{
@@ -32,6 +27,13 @@ library StemCore {
         bytes inspecState;
     }
 
+    struct Deposit{
+        uint256 amount;
+        uint256 blkNum;
+        bool    isOperator;
+        address refundAccount;
+    }
+
     struct Exit{
         uint256 amount;
         uint256 blkNum;
@@ -39,11 +41,10 @@ library StemCore {
         bool    executed;
     }
 
-    struct Deposit{
-        uint256 amount;
-        uint256 blkNum;
-        bool    isOperator;
-        address refundAccount;
+     struct InspecBlock {
+        address creator;
+        bytes32 txTreeRoot;
+        bytes32 balanceTreeRoot;
     }
 
     struct ChainStorage {
@@ -67,15 +68,12 @@ library StemCore {
         uint256 nextExitBlockIncrement;
         uint256 nextChildBlockNum;
         uint256 lastChildBlockNum;
-
         mapping(uint256 => ChildBlock) childBlocks;
-
         uint256 childBlockChallengePeriod;
         uint256 childBlockChallengeSubmissionPeriod;
         bool    isBlockSubmissionBondReleased;
         uint256 blockSubmissionBond;
         uint256 blockChallengeBond;
-
         uint192[] childBlockChallengeId;
         mapping(uint192 => ChildBlockChallenge) childBlockChallenges;
 
@@ -94,25 +92,19 @@ library StemCore {
         uint256 userMinDeposit;
         uint256 userExitBond;
 
+        /** @dev deposit and exit related */
         mapping(address => address) refundAddress;
-
+        mapping(address => Deposit) deposits;
+        address[] depositsIndices;
         mapping(address => Exit) exits;
         address[] exitsIndices;
 
-        mapping(address => Deposit) deposits;
-        address[] depositsIndices;
-
+        /** @dev backup params */
         uint256   feeBackup;
         uint256   totalDepositBackup;
         address[] accountsBackup;
         uint256[] balancesBackup;
 
-    }
-
-    struct InspecBlock {
-        address creator;
-        bytes32 txTreeRoot;
-        bytes32 balanceTreeRoot;
     }
 
     /**
@@ -197,7 +189,6 @@ library StemCore {
                 depositAmount = depositAmount.sub(self.exits[_user].amount);
                 self.refundAddress[_user].transfer(self.exits[_user].amount.add(self.userExitBond));
                 delete self.exits[_user];
-                // TODO: emit an event to cancel the older exit request
             } else if (self.exits[_user].amount > depositAmount) {
                 self.exits[_user].amount = self.exits[_user].amount.sub(depositAmount);
                 self.refundAddress[_user].transfer(depositAmount);
@@ -246,7 +237,7 @@ library StemCore {
     * @dev Verify that the user is valid and that the deposit is sufficient
     * @param _user The user of the subchain
     * @param _deposit The deposit of the user.
-    * return true if the user is valid
+    * @return true if the user is valid
     */
     function isValidUserDeposit(ChainStorage storage self, address _user, uint256 _deposit) public view returns(bool){
         require(_user != address(0), "Invalid user address");
@@ -257,7 +248,7 @@ library StemCore {
 
     /**
     * @dev Process next deposit block number
-    * return next deposit block number
+    * @return next deposit block number
     */
     function processDepositBlockNum(ChainStorage storage self) internal returns(uint256) {
         // Only allow a limited number of deposits per child block. 1 <= nextDepositBlockIncrement < CHILD_BLOCK_INTERVAL.
@@ -299,6 +290,7 @@ library StemCore {
      */
     function executeDepositsAndExits(ChainStorage storage self) internal {
         address account;
+        // execute exits
         for (uint j = 0; j < self.exitsIndices.length; j++) {
             account = self.exitsIndices[j];
             if (self.exits[account].isOperator) {
@@ -561,7 +553,7 @@ library StemCore {
 
     /**
     * @dev process next exit block number
-    * return next exit block number
+    * @return next exit block number
     */
     function processExitBlockNum(ChainStorage storage self) internal returns(uint256) {
         // Only allow a limited number of exits per child block. 1 <= nextExitBlockIncrement < CHILD_BLOCK_INTERVAL.
