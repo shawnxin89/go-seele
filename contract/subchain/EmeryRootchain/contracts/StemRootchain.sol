@@ -2,6 +2,7 @@ pragma solidity ^0.4.24;
 
 // external modules
 import "./SafeMath.sol";
+import "./RLPEncoding.sol";
 import "./StemCore.sol";
 import "./StemRelay.sol";
 import "./StemChallenge.sol";
@@ -16,27 +17,17 @@ contract StemRootchain {
     using StemCore for bytes;
     using StemCore for StemCore.ChainStorage;
 
-    StemCore.ChainStorage data;
+    StemCore.ChainStorage private data;
 
     /** events */
-    /*event AddOperatorRequest(
-        address indexed operator,
-        uint256 indexed blkNum,
-        uint256 deposit
-    );
-    event UserDepositRequest(
-        address indexed user,
-        uint256 indexed blkNum,
-        uint256 deposit
-    );
-
-    event BlockSubmitted(
-        uint256 blockNumber
-    );
-
-    event BlockReversed(
-        uint256 blockNumber
-    );*/
+     event AddOperatorRequest(address account, uint256 depositBlockNum, uint256 amount);
+     event UserDepositRequest(address account, uint256 depositBlockNum, uint256 amount);
+     event OperatorExitRequest(address account, uint256 exitBlockNum, uint256 amount);
+     event UserExitRequest(address account, uint256 exitBlockNum, uint256 amount);
+     event BlockSubmitted(uint256 blkNum, uint256 timestamp);
+     event BlockReversed(uint256 blkNum);
+     event BlockChallenge(address challengeTarget, uint256 blkNum);
+     event RemoveBlockChallenge(uint challengeIndex);
 
     /** @dev Reverts if called by any account other than the owner. */
     modifier onlyOwner() {
@@ -71,7 +62,7 @@ contract StemRootchain {
      */
     constructor(bytes32 _subchainName, bytes32[] _genesisInfo, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits, address[] _refundAccounts)
     public payable {
-        StemCreation.createSubchain(data, msg.value, msg.sender, _subchainName, _genesisInfo, _staticNodes, _creatorDeposit, _ops, _opsDeposits, _refundAccounts);
+        StemCreation.createSubchain(data, _subchainName, _genesisInfo, _staticNodes, _creatorDeposit, _ops, _opsDeposits, _refundAccounts, msg.sender, msg.value);
     }
 
     /**
@@ -80,7 +71,7 @@ contract StemRootchain {
     * @param _refundAccount The account where the fund will be returned
     */
     function addOperatorRequest(address _operator, address _refundAccount) public payable {
-        data.createAddOperatorRequest(msg.value, _operator, _refundAccount);
+        data.createAddOperatorRequest(_operator, _refundAccount, msg.value);
     }
 
     /**
@@ -89,7 +80,7 @@ contract StemRootchain {
     * @param _refundAccount The account where the fund will be returned
     */
     function userDepositRequest(address _user, address _refundAccount) public payable {
-        data.createUserDepositRequest(_user, _refundAccount);
+        data.createUserDepositRequest(_user, _refundAccount, msg.value);
     }
 
     /**
@@ -167,7 +158,7 @@ contract StemRootchain {
      * @param _fee The fee income of every operator during last period
      */
      function submitBlock(uint256 _blkNum, bytes32 _balanceTreeRoot, bytes32 _txTreeRoot, address[] _accounts, uint256[] _updatedBalances, uint256 _fee) public payable onlyWithValue(data.blockSubmissionBond) {//onlyOperator onlyWithValue(data.blockSubmissionBond) {
-        StemRelay.handleRelayBlock(data, _blkNum, _balanceTreeRoot, _txTreeRoot, _accounts, _updatedBalances, _fee);
+        StemRelay.handleRelayBlock(data, _blkNum, _balanceTreeRoot, _txTreeRoot, _accounts, _updatedBalances, _fee, msg.sender);
      }
 
     /**
@@ -184,15 +175,17 @@ contract StemRootchain {
     * @param _inspecBlock The block header corresponding to the _inspecTxHash
     * @param _inspecBlockSignature The operator's signature in the block
     * @param _inspecTxHash The tx hash which the challenger asks the operator to include in the response
-    * @param _inspecTxIndex The tx index in the merkle tree
-    * @param _txInclusionProof The proof showing _inspecTxHash is included in _inspecBlock
     * @param _inspecState The state of target account in _inspecBlock
-    * @param _inspecStateIndex The state index in the merkle tree
-    * @param _stateInclusionProof The proof showing _inspecState is in _inspecBlock
+    * @param _indices  0._inspecTxIndex The tx index in the merkle tree; 1._inspecStateIndex The state index in the merkle tree
+    * @param _inclusionProofs 0. The proof showing _inspecTxHash is included in _inspecBlock; 1._stateInclusionProof The proof showing _inspecState is in _inspecBlock
     */
-    function challengeSubmittedBlock(address _challengeTarget, bytes _inspecBlock, bytes _inspecBlockSignature, bytes32 _inspecTxHash, uint256 _inspecTxIndex, bytes _txInclusionProof, bytes _inspecState, uint256 _inspecStateIndex, bytes _stateInclusionProof)
+    function challengeSubmittedBlock(address _challengeTarget, bytes _inspecBlock, bytes _inspecBlockSignature, bytes32 _inspecTxHash, bytes _inspecState, bytes _indices, bytes _inclusionProofs)
     public payable onlyWithValue(data.blockChallengeBond) {
-        StemChallenge.processChallenge(data, _challengeTarget, _inspecBlock, _inspecBlockSignature, _inspecTxHash, _inspecTxIndex, _txInclusionProof, _inspecState, _inspecStateIndex, _stateInclusionProof);
+        bytes[] memory bytesArray = new bytes[](2);
+        bytesArray[0] = RLPEncoding.encodeAddress(msg.sender);
+        bytesArray[1] = RLPEncoding.encodeAddress(_challengeTarget);
+        bytes memory encodedAddresses = RLPEncoding.encodeList(bytesArray);
+        StemChallenge.processChallenge(data, encodedAddresses, _inspecBlock, _inspecBlockSignature, _inspecTxHash, _inspecState, _indices, _inclusionProofs);
     }
 
     /**
@@ -206,7 +199,7 @@ contract StemRootchain {
     */
     //function responseToBlockChallenge(uint _challengeIndex, bytes _recentTxs, bytes _signatures, uint256 _txLeafIndex, bytes _recentTxInclusionProof, bytes _preState, uint256 _preStateIndex, bytes _preStateInclusionProof, uint256 _stateIndex, bytes _stateInclusionProof) public onlyOperator {
     function responseToBlockChallenge(uint _challengeIndex, bytes _recentTxs, bytes _signatures, bytes _indices, bytes _preState, bytes _inclusionProofs) public {//onlyOperator {
-        StemChallenge.handleResponseToChallenge(data, msg.sender, _challengeIndex, _recentTxs, _signatures, _indices, _preState, _inclusionProofs);
+        StemChallenge.handleResponseToChallenge(data, _challengeIndex, _recentTxs, _signatures, _indices, _preState, _inclusionProofs, msg.sender);
     }
 
     /**

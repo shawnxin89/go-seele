@@ -1,8 +1,5 @@
 pragma solidity ^0.4.0;
 
-import "./ByteUtils.sol";
-
-
 /**
  * @title Merkle
  * @dev Library for working with Merkle trees.
@@ -11,8 +8,6 @@ library Merkle {
     /*
      * Storage
      */
-
-    using ByteUtils for bytes;
 
 
     /*

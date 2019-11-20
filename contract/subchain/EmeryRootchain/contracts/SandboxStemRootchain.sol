@@ -27,26 +27,6 @@ contract SandboxStemRootchain {
 
     StemCore.ChainStorage data;
 
-    /** events */
-    /*event AddOperatorRequest(
-        address indexed operator,
-        uint256 indexed blkNum,
-        uint256 deposit
-    );
-    event UserDepositRequest(
-        address indexed user,
-        uint256 indexed blkNum,
-        uint256 deposit
-    );
-
-    event BlockSubmitted(
-        uint256 blockNumber
-    );
-
-    event BlockReversed(
-        uint256 blockNumber
-    );*/
-
     /** @dev Reverts if called by any account other than the owner. */
     modifier onlyOwner() {
         require(msg.sender == data.owner, "You're not the owner of the contract");
@@ -78,11 +58,11 @@ contract SandboxStemRootchain {
      */
     constructor(bytes32 _subchainName, bytes32[] _genesisInfo, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits, address[] _refundAccounts)
     public payable {
-        StemCreation.createSubchain(data, msg.value, msg.sender, _subchainName, _genesisInfo, _staticNodes, _creatorDeposit, _ops, _opsDeposits, _refundAccounts);
+        StemCreation.createSubchain(data, _subchainName, _genesisInfo, _staticNodes, _creatorDeposit, _ops, _opsDeposits, _refundAccounts, msg.sender, msg.value);
         // submit block[1000]
         address[] memory testAddresses0;
         uint256[] memory testBalances0;
-        StemRelay.handleRelayBlock(data, 1000, 0x461e1a3a6e69fcf502f87941c8065bc0ef02c13160d151bfbec8797d91f6a1fb, 0xc810ba2f7f7d10159a42effd535fd92e3ebf65c913dfa13fcbf874b124677bbb, testAddresses0, testBalances0, 0);
+        StemRelay.handleRelayBlock(data, 1000, 0x461e1a3a6e69fcf502f87941c8065bc0ef02c13160d151bfbec8797d91f6a1fb, 0xc810ba2f7f7d10159a42effd535fd92e3ebf65c913dfa13fcbf874b124677bbb, testAddresses0, testBalances0, 0, msg.sender);
         // submit block[2000]
         address[] memory testAddresses = new address[](2);
         testAddresses[0] = 0x627306090abaB3A6e1400e9345bC60c78a8BEf57;
@@ -90,7 +70,7 @@ contract SandboxStemRootchain {
         uint256[] memory testBalances = new uint256[](2);
         testBalances[0] = 1234565890;
         testBalances[1] = 1234568890;
-        StemRelay.handleRelayBlock(data, 2000, 0x0541f8a317ff1b9e13379d46f5d67062666b74eefad90431e9fe46b3ed7d723e, 0x0bb650a613bd81bb21db5a56b3a455c6b2e2c79cc2ad75c19f12f86c77e84fa4, testAddresses, testBalances, 250);
+        StemRelay.handleRelayBlock(data, 2000, 0x0541f8a317ff1b9e13379d46f5d67062666b74eefad90431e9fe46b3ed7d723e, 0x0bb650a613bd81bb21db5a56b3a455c6b2e2c79cc2ad75c19f12f86c77e84fa4, testAddresses, testBalances, 250, msg.sender);
     }
 
    function createTestChallenge() public {
@@ -113,7 +93,7 @@ contract SandboxStemRootchain {
      * @param _fee The fee income of every operator during last period
      */
      function submitBlock(uint256 _blkNum, bytes32 _balanceTreeRoot, bytes32 _txTreeRoot, address[] _accounts, uint256[] _updatedBalances, uint256 _fee) public payable onlyWithValue(data.blockSubmissionBond) {//onlyOperator onlyWithValue(data.blockSubmissionBond) {
-        StemRelay.handleRelayBlock(data, _blkNum, _balanceTreeRoot, _txTreeRoot, _accounts, _updatedBalances, _fee);
+        StemRelay.handleRelayBlock(data, _blkNum, _balanceTreeRoot, _txTreeRoot, _accounts, _updatedBalances, _fee, msg.sender);
      }
 
     /**
@@ -130,15 +110,17 @@ contract SandboxStemRootchain {
     * @param _inspecBlock The block header corresponding to the _inspecTxHash
     * @param _inspecBlockSignature The operator's signature in the block
     * @param _inspecTxHash The tx hash which the challenger asks the operator to include in the response
-    * @param _inspecTxIndex The tx index in the merkle tree
-    * @param _txInclusionProof The proof showing _inspecTxHash is included in _inspecBlock
     * @param _inspecState The state of target account in _inspecBlock
-    * @param _inspecStateIndex The state index in the merkle tree
-    * @param _stateInclusionProof The proof showing _inspecState is in _inspecBlock
+    * @param _indices  0._inspecTxIndex The tx index in the merkle tree; 1._inspecStateIndex The state index in the merkle tree
+    * @param _inclusionProofs 0. The proof showing _inspecTxHash is included in _inspecBlock; 1._stateInclusionProof The proof showing _inspecState is in _inspecBlock
     */
-    function challengeSubmittedBlock(address _challengeTarget, bytes _inspecBlock, bytes _inspecBlockSignature, bytes32 _inspecTxHash, uint256 _inspecTxIndex, bytes _txInclusionProof, bytes _inspecState, uint256 _inspecStateIndex, bytes _stateInclusionProof)
+    function challengeSubmittedBlock(address _challengeTarget, bytes _inspecBlock, bytes _inspecBlockSignature, bytes32 _inspecTxHash, bytes _inspecState, bytes _indices, bytes _inclusionProofs)
     public payable onlyWithValue(data.blockChallengeBond) {
-        StemChallenge.processChallenge(data, _challengeTarget, _inspecBlock, _inspecBlockSignature, _inspecTxHash, _inspecTxIndex, _txInclusionProof, _inspecState, _inspecStateIndex, _stateInclusionProof);
+        bytes[] memory bytesArray = new bytes[](2);
+        bytesArray[0] = RLPEncoding.encodeAddress(msg.sender);
+        bytesArray[1] = RLPEncoding.encodeAddress(_challengeTarget);
+        bytes memory encodedAddresses = RLPEncoding.encodeList(bytesArray);
+        StemChallenge.processChallenge(data, encodedAddresses, _inspecBlock, _inspecBlockSignature, _inspecTxHash, _inspecState, _indices, _inclusionProofs);
     }
 
     /**
@@ -152,7 +134,7 @@ contract SandboxStemRootchain {
     */
     //function responseToBlockChallenge(uint _challengeIndex, bytes _recentTxs, bytes _signatures, uint256 _txLeafIndex, bytes _recentTxInclusionProof, bytes _preState, uint256 _preStateIndex, bytes _preStateInclusionProof, uint256 _stateIndex, bytes _stateInclusionProof) public onlyOperator {
     function responseToBlockChallenge(uint _challengeIndex, bytes _recentTxs, bytes _signatures, bytes _indices, bytes _preState, bytes _inclusionProofs) public {//onlyOperator {
-        StemChallenge.handleResponseToChallenge(data, msg.sender, _challengeIndex, _recentTxs, _signatures, _indices, _preState, _inclusionProofs);
+        StemChallenge.handleResponseToChallenge(data, _challengeIndex, _recentTxs, _signatures, _indices, _preState, _inclusionProofs, msg.sender);
     }
 
     /**

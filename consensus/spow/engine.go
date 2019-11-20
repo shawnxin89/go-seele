@@ -363,11 +363,6 @@ func handleResults(block *types.Block, result chan<- *types.Block, abort <-chan 
 	return
 }
 
-// logAbort logs the info that nonce finding is aborted
-func logAbort(log *log.SeeleLog) {
-	log.Info("nonce finding aborted")
-}
-
 // ValidateHeader validates the specified header and returns error if validation failed.
 func (engine *SpowEngine) VerifyHeader(reader consensus.ChainReader, header *types.BlockHeader) error {
 	parent := reader.GetHeaderByHash(header.PreviousBlockHash)
@@ -382,10 +377,12 @@ func (engine *SpowEngine) VerifyHeader(reader consensus.ChainReader, header *typ
 
 	if header.Height >= common.SecondForkHeight || (header.Creator.Shard() == uint(1) && header.Height > common.ForkHeight) {
 		if err := engine.verifyTarget(header); err != nil {
+			engine.log.Error("VeryfyTarget")
 			return err
 		}
 	} else {
 		if err := verifyPair(header); err != nil {
+			engine.log.Error("verifyPair")
 			return err
 		}
 	}
@@ -448,6 +445,10 @@ func difficultyToNumOfBits(difficulty *big.Int, height uint64) *big.Int {
 	return numOfBits
 }
 
+func logAbort(log *log.SeeleLog) {
+	log.Info("nonce finding aborted")
+}
+
 func (engine *SpowEngine) MSeal(reader consensus.ChainReader, block *types.Block, stop <-chan struct{}, results chan<- *types.Block) error {
 	threads := engine.threads
 
@@ -491,23 +492,31 @@ func (engine *SpowEngine) MStartMining(block *types.Block, seed uint64, min uint
 	var hashInt big.Int
 	var caltimes = int64(0)
 	var isBegining = true
-	target := getMiningTarget(block.Header.Difficulty)
+	target := getMiningTarget(block.Header.Difficulty).Int64()
+	target1 := getMiningTarget(block.Header.Difficulty)
+	//log.Warn("TARGET %d,%v", target, target1)
 	nonZeroCountTarget := getNonZeroCountTarget(matrixDim)
 	header := block.Header.Clone()
 	dim := matrixDim
 	matrix := mat.NewDense(dim, 256, nil)
+	counter := 0
 
 miner:
 	for {
+		counter++
+
 		select {
 		case <-abort:
+			//log.Warn("MINER　ABORTED %d,%d", counter, nonce)
 			logAbort(log)
 			hashrate.Mark(caltimes)
+
 			break miner
 
 		default:
+
 			if atomic.LoadInt32(isNonceFound) != 0 {
-				log.Debug("exit mining as nonce is found by other threads")
+				log.Debug("exit mining  as nonce is found by other threads")
 				break miner
 			}
 
@@ -523,7 +532,7 @@ miner:
 
 			// isBegining: fresh start or nonce reverse: make sure nonce verify is right
 			if isBegining == true { // there is no matrix yet
-				if nonce+uint64(dim) >= max { // reach out of tail, reverse
+				if nonce+uint64(dim) >= max { // reach out of tail, revmatrix
 					nonce = min
 				}
 				header.Witness = []byte(strconv.FormatUint(nonce, 10))
@@ -531,19 +540,21 @@ miner:
 				matrix = newMatrix(header, nonce, dim, log)
 				isBegining = false
 			} else {
-				if nonce+uint64(dim) >= max { // reach out of tail, reverse
+				if nonce+uint64(dim) >= max { // reach out of tail, revmatrix
 					nonce = min
 				}
 				matrix = submatCopyByRow(header, matrix, 1, dim, nonce)
 				header.Witness = []byte(strconv.FormatUint(nonce-uint64(dim-1), 10))
 				hash = header.Hash()
 			}
-			res, count := calDetmLoop(matrix, dim, log)
+			//res, count := calDetmLoopNew(matrix, dim, target, log)
+			res, count := calDetmLoopNewModfied_new(matrix, dim, target, abort, log)
+			//res, count := calDetmLoopNew_01(matrix, dim, target, log)
 			restInt := int64(res)
 			restBig := big.NewInt(restInt)
 
 			// found
-			if restBig.Cmp(target) >= 0 && count >= nonZeroCountTarget {
+			if restBig.Cmp(target1) >= 0 && count >= nonZeroCountTarget {
 				once.Do(func() {
 					block.Header = header
 					block.HeaderHash = hash
@@ -552,6 +563,7 @@ miner:
 					case <-abort:
 						logAbort(log)
 					case result <- block:
+						log.Warn("FOUND A BLOCK %d", counter)
 						atomic.StoreInt32(isNonceFound, 1)
 						log.Debug("found det:%d", restBig)
 						log.Debug("target:%d", target)
@@ -571,9 +583,14 @@ miner:
 
 				break miner
 			}
+			//if time.Now().Sub(start).Seconds() > 40 {
+			//log.Warn("Time to find a block longer than 40 seconds,stop miner")
+			//break miner
+			//}
 			nonce++
 		}
 	}
+	//log.Warn("INTERATION %d", counter)
 }
 
 func (engine *SpowEngine) verifyTarget(header *types.BlockHeader) error {
@@ -583,12 +600,16 @@ func (engine *SpowEngine) verifyTarget(header *types.BlockHeader) error {
 	if err != nil {
 		return err
 	}
+	//target := getMiningTarget(header.Difficulty).Int64()
+	target := getMiningTarget(header.Difficulty)
+
 	matrix := newMatrix(header, nonceUint64, dim, engine.log)
 	res, count := calDetmLoop(matrix, dim, engine.log)
 	restInt := int64(res)
 	restBig := big.NewInt(restInt)
-	target := getMiningTarget(header.Difficulty)
+
 	if restBig.Cmp(target) < 0 || count < getNonZeroCountTarget(dim) {
+		engine.log.Error("det %d, target %d , count %d  ", restInt, target, count)
 		return consensus.ErrBlockNonceInvalid
 	}
 	return nil
@@ -635,13 +656,12 @@ func calDetm(matrix *mat.Dense, dim int, log *log.SeeleLog) float64 {
 	return det
 }
 
-// matrix is dim x 256
-// calDetmLoop will loop from 0 to 256 - dim
 func calDetmLoop(matrix *mat.Dense, dim int, log *log.SeeleLog) (float64, int) {
 	var ret = float64(0)
 	var nonZerosCount = int(0)
 	nonZeroCountTarget := getNonZeroCountTarget(dim)
 	submatrix := mat.NewDense(dim, dim, nil)
+
 	for i := 0; i < 256-dim; i++ {
 		submatrix = submatCopy(matrix, i, dim)
 
@@ -654,6 +674,7 @@ func calDetmLoop(matrix *mat.Dense, dim int, log *log.SeeleLog) (float64, int) {
 			detInt := int64(det)
 			detBig := big.NewInt(detInt)
 			if detBig.Cmp(big.NewInt(0)) > 0 {
+
 				nonZerosCount++
 			}
 			// already meet the requirement, just stop and return
@@ -667,6 +688,109 @@ func calDetmLoop(matrix *mat.Dense, dim int, log *log.SeeleLog) (float64, int) {
 		}
 	}
 	return ret, nonZerosCount
+}
+
+func calDetmLoopNewModfied_new(matrix *mat.Dense, dim int, target int64, abort <-chan struct{}, log *log.SeeleLog) (float64, int) {
+
+	detVector := make([]float64, 256)
+
+	segment := 30
+	startIndex := 215
+	endIndex := 256 - dim
+	possibleSol := false
+	nonZeroCountTarget := getNonZeroCountTarget(dim)
+	plus := 0
+	detv := computeDets(matrix, dim, startIndex, endIndex, log)
+	for i := 0; i < endIndex-startIndex; i++ {
+		if detv[i] > 0 {
+			plus++
+			detVector[startIndex+i] = detv[i]
+
+			if detv[i] >= float64(target) {
+
+				possibleSol = true
+			}
+
+		}
+
+	}
+
+	detv = nil
+
+	nonzeros := 0
+	if possibleSol {
+
+		for i := 0; i < startIndex; { //start from 1
+			if startIndex-i < segment {
+				segment = startIndex - i
+			}
+			//log.Error("last index %d", i+segment)
+			detv := computeDets(matrix, dim, i, i+segment, log)
+
+			for j := 0; j < segment; j++ {
+				detVector[j+i] = detv[j]
+				if detVector[j+i] > 0.0 && j+i > 0 {
+					nonzeros++
+				}
+				if nonzeros >= nonZeroCountTarget {
+
+					return detVector[i+j], nonzeros
+				}
+				if nonzeros+256-dim-i-j < nonZeroCountTarget {
+					detv = nil
+					return 0.0, 0
+				}
+
+			}
+			detv = nil
+			i = i + segment
+		}
+		if nonzeros+plus < nonZeroCountTarget {
+
+			return 0.0, 0
+		}
+
+		for i := startIndex; i < 256-dim; i++ {
+
+			if detVector[i] > 0 {
+				nonzeros++
+			}
+			if nonzeros+256-dim-i < nonZeroCountTarget {
+				detVector = nil
+				return 0.0, 0
+			}
+			if nonzeros >= nonZeroCountTarget {
+				x := detVector[i]
+				detVector = nil
+
+				return x, nonzeros
+			}
+		}
+	}
+	x := detVector[0]
+	detVector = nil
+	return x, nonzeros
+
+}
+
+func computeDets(matrix *mat.Dense, dim int, start int, endInd int, log *log.SeeleLog) []float64 {
+	detV := make([]float64, endInd-start)
+	var pend sync.WaitGroup
+	pend.Add(endInd - start)
+	for i := 0; i < endInd-start; i++ {
+
+		submatrix := submatCopy(matrix, start+i, dim)
+		go func(matr *mat.Dense, detr *float64) {
+			defer pend.Done()
+
+			det := mat.Det(matr)
+			*detr = det
+		}(submatrix, &detV[i])
+
+	}
+	pend.Wait()
+	return detV
+
 }
 
 func submatCopy(matrix *mat.Dense, beginCol int, dim int) *mat.Dense {
@@ -697,6 +821,31 @@ func submatCopyByRow(headerTarget *types.BlockHeader, matrix *mat.Dense, beginRo
 	return submatrix
 }
 
+func submatCopyByRownew(headerTarget *types.BlockHeader, matrix *mat.Dense, beginRow int, dim int, nonce uint64) *mat.Dense {
+
+	header := headerTarget.Clone()
+	submatrix := mat.NewDense(dim, 256, nil)
+
+	for i := 0; i < dim-10; i++ {
+		row := mat.Row(nil, beginRow+i, matrix)
+		submatrix.SetRow(i, row)
+	}
+	for i := dim - 10; i < dim; i++ {
+
+		//row := mat.Row(nil, beginRow+i, matrix)
+		//submatrix.SetRow(i, row)
+		//}FOUND
+		header.Witness = []byte(strconv.FormatUint(nonce+uint64(i), 10))
+		header.SecondWitness = []byte{}
+		hash := header.Hash()
+		col, isLeg := getBinaryArray(hash.String())
+		if isLeg == false {
+			return nil
+		}
+		submatrix.SetRow(i, col)
+	}
+	return submatrix
+}
 func getBinaryArray(hash string) ([]float64, bool) {
 	binmap := map[int32][]float64{
 		48:  {0, 0, 0, 0}, //0

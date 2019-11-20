@@ -1,10 +1,8 @@
 pragma solidity ^0.4.24;
 
 // external modules
-import "./ByteUtils.sol";
 import "./ECRecovery.sol";
 import "./Merkle.sol";
-import "./PriorityQueue.sol";
 import "./RLP.sol";
 import "./RLPEncoding.sol";
 import "./SafeMath.sol";
@@ -16,38 +14,44 @@ library StemChallenge {
     using RLPEncoding for address;
     using RLPEncoding for uint256;
     using RLPEncoding for bytes[];
-    using PriorityQueue for uint256[];
     using SafeMath for uint256;
 
+    event BlockChallenge(address challengeTarget, uint256 blkNum);
+    event RemoveBlockChallenge(uint challengeIndex);
     /**
     * @dev Process new child block challenge
-    * @param _challengeTarget The challenge target
+    * @param _encodedAddresses  Msg sender and the challenge target
     * @param _inspecBlock  The block containing the inspec tx (structure: creator/txTreeRoot/stateTreeRoot)
     * @param _inspecBlockSignature  The block signature signed by the block producer
     * @param _inspecTxHash  The tx hash provided by the challenger(default 0x0)
-    * @param _inspecTxIndex The index of the tx in the merkle tree
-    * @param _txInclusionProof The merkle tree inclusion proof
     * @param _inspecState   The state of the target address after the inspec tx
-    * @param _inspecStateIndex The index of the state in the merkle tree
-    * @param _stateInclusionProof The merkle tree inclusion proof
+    * @param _indices  0._inspecTxIndex The tx index in the merkle tree; 1._inspecStateIndex The state index in the merkle tree
+    * @param _inclusionProofs 0. The proof showing _inspecTxHash is included in _inspecBlock; 1._stateInclusionProof The proof showing _inspecState is in _inspecBlock
      */
-    function processChallenge(StemCore.ChainStorage storage self, address _challengeTarget, bytes _inspecBlock, bytes _inspecBlockSignature, bytes32 _inspecTxHash, uint256 _inspecTxIndex, bytes _txInclusionProof, bytes _inspecState, uint256 _inspecStateIndex, bytes _stateInclusionProof) 
+    function processChallenge(StemCore.ChainStorage storage self, bytes _encodedAddresses, bytes _inspecBlock, bytes _inspecBlockSignature, bytes32 _inspecTxHash, bytes _inspecState, bytes _indices, bytes _inclusionProofs) 
     public {
         // make sure it is within challenge submission period
         require(block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) <= self.childBlockChallengeSubmissionPeriod, "Not in challenge submission period");
 
+        RLP.RLPItem[] memory addresses = _encodedAddresses.toRLPItem().toList();
+        RLP.RLPItem[] memory indices = _indices.toRLPItem().toList();
+        RLP.RLPItem[] memory proofs = _inclusionProofs.toRLPItem().toList();
         // Challenge target must exist.
-        require(self.isExistedUsers[_challengeTarget] || self.isExistedOperators[_challengeTarget], "The challenge target doesn't exist!");
+        require(self.isExistedUsers[addresses[1].toAddress()] || self.isExistedOperators[addresses[1].toAddress()], "The challenge target doesn't exist!");
 
-        // decode _inspecBlock
-        StemCore.InspecBlock memory decodedBlock = StemCore.decode(_inspecBlock);
-        require(self.isExistedOperators[decodedBlock.creator], "The block is not created by existing operators");
-        require(decodedBlock.creator == ECRecovery.recover(keccak256(_inspecBlock), _inspecBlockSignature), "Invalid signature");
-        require(Merkle.checkMembership(_inspecTxHash, _inspecTxIndex, decodedBlock.txTreeRoot, _txInclusionProof), "Failed to prove the inclusion of the tx");
-        // get the hash of the state
-        require(Merkle.checkMembership(keccak256(_inspecState), _inspecStateIndex, decodedBlock.balanceTreeRoot, _stateInclusionProof), "Failed to prove the inclusion of the state");
-        //TODO consider the case that _inspecTxHash is nil
-        createChildBlockChallenge(self, msg.sender, _challengeTarget, _inspecTxHash, _inspecState);
+        if (_inspecBlock.length > 0) {
+            // decode _inspecBlock
+            StemCore.InspecBlock memory decodedBlock = decode(_inspecBlock);
+            require(self.isExistedOperators[decodedBlock.creator], "The block is not created by existing operators");
+            require(decodedBlock.creator == ECRecovery.recover(keccak256(_inspecBlock), _inspecBlockSignature), "Invalid signature");
+            require(Merkle.checkMembership(_inspecTxHash, indices[0].toUint(), decodedBlock.txTreeRoot, proofs[0].toData()), "Failed to prove the inclusion of the tx");
+            // get the hash of the state
+            require(Merkle.checkMembership(keccak256(_inspecState), indices[1].toUint(), decodedBlock.balanceTreeRoot, proofs[1].toData()), "Failed to prove the inclusion of the state");
+            //TODO consider the case that _inspecTxHash is nil
+            createChildBlockChallenge(self, addresses[0].toAddress(), addresses[1].toAddress(), _inspecTxHash, _inspecState);
+        } else {
+            createChildBlockChallenge(self, addresses[0].toAddress(), addresses[1].toAddress(), bytes32(0), "");
+        }
     }
 
     /**
@@ -67,6 +71,7 @@ library StemChallenge {
         uint192 challengeId = getBlockChallengeId(_challengerAddress, _challengeTarget, self.lastChildBlockNum);
         self.childBlockChallenges[challengeId] = newChallenge;
         self.childBlockChallengeId.push(challengeId);
+        emit BlockChallenge(_challengeTarget, self.lastChildBlockNum);
     }
 
    /**
@@ -105,7 +110,6 @@ library StemChallenge {
 
     /**
     * @dev Handle the response to block challenges. If the response is valid, remove the corresponding challenge
-    * @param _msgSender The reponse submitter
     * @param _challengeIndex The index of the challenge(TODO: change it the challenge ID)
     * @param _recentTxs Txs during the last interval
     * @param _signatures Tx signatures
@@ -113,7 +117,7 @@ library StemChallenge {
     * @param _preState  RLP encoded previous state (account:balance:nonce)
     * @param _inclusionProofs The inclusion proofs of rencentTxs/previous State/Current State
      */
-    function handleResponseToChallenge(StemCore.ChainStorage storage self, address _msgSender, uint _challengeIndex, bytes _recentTxs, bytes _signatures, bytes _indices, bytes _preState, bytes _inclusionProofs) public {
+    function handleResponseToChallenge(StemCore.ChainStorage storage self, uint _challengeIndex, bytes _recentTxs, bytes _signatures, bytes _indices, bytes _preState, bytes _inclusionProofs, address _msgSender) public {
         //require(block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) <= self.childBlockChallengePeriod, "Not in challenge period");
         require(self.childBlockChallengeId.length > _challengeIndex, "Invalid challenge index");
         // 0: txLeafIndex, 1: preStateLeafIndex, 2: stateLeafIndex
@@ -129,11 +133,12 @@ library StemChallenge {
         require(Merkle.checkMembership(keccak256(actualState), indices[1].toUint(), self.childBlocks[self.lastChildBlockNum].balanceTreeRoot, proofs[2].toData()), "Failed to prove the inclusion of the state");
 
         // respond to the block challenge successfully
+        //_msgSender.transfer(self.blockChallengeBond);
         // for test only
         _msgSender = 0x583031D1113aD414F02576BD6afaBfb302140225;
         _msgSender.transfer(self.blockChallengeBond);
         removeChildBlockChallengeByIndex(self, _challengeIndex);
-
+        emit RemoveBlockChallenge(_challengeIndex);
     }
 
      /**
@@ -157,10 +162,6 @@ library StemChallenge {
     * @return the balance of target account after applying all txs
     */
     function verifyRecentTxs(StemCore.ChainStorage storage self, uint _challengeIndex, bytes _preState, RLP.RLPItem[] memory _splitRecentTxs, RLP.RLPItem[] memory _splitSignatures) internal view returns(bytes) {
-
-        //uint256 actualBalance = _getBalanceByChallengeIndex(_challengeIndex);
-        // TODO: require expectedBalance in a certain range, need to consider gas cost
-        //require(actualBalance == expectedBalance, "Invalid balance");
 
         StemCore.ChildBlockChallenge memory challenge = self.childBlockChallenges[self.childBlockChallengeId[_challengeIndex]];
 
@@ -186,8 +187,9 @@ library StemChallenge {
         }
 
         // require recent txs to include inspec tx
-        // TODO consider the case that inspecTxHash is nil
-        require(inspecTxCount == uint256(1));
+        if (challenge.inspecTxHash != bytes32(0)) { 
+            require(inspecTxCount == uint256(1));
+        }
         // TODO compare tempBalance with the balance of the target account (operaters[account] or users[account])
         return _encodeState(challenge.challengeTarget, tempBalance, tempNonce);
     }
@@ -258,5 +260,20 @@ library StemChallenge {
         self.childBlockChallengeId[_index] = self.childBlockChallengeId[self.childBlockChallengeId.length - 1];
         delete self.childBlockChallengeId[self.childBlockChallengeId.length - 1];
         self.childBlockChallengeId.length--;
+    }
+
+     /**
+    * @dev Decode the RLP encoded inspec block
+    * @param _inspecBlock RLP(creator, txTreeRoot, balanceTreeRoot)
+     */
+    function decode(bytes _inspecBlock) internal pure returns (StemCore.InspecBlock)
+    {
+        RLP.RLPItem[] memory inputs = _inspecBlock.toRLPItem().toList();
+        StemCore.InspecBlock memory decodedBlock;
+
+        decodedBlock.creator = inputs[0].toAddress();
+        decodedBlock.txTreeRoot = inputs[1].toBytes32();
+        decodedBlock.balanceTreeRoot = inputs[2].toBytes32();
+        return decodedBlock;
     }
 }

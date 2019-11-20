@@ -43,8 +43,33 @@ contract TestStemChallengeSubmission {
         bytesArray[1] = RLPEncoding.encodeBytes(ByteUtils.bytes32ToBytes(txTreeRoot));
         bytesArray[2] = RLPEncoding.encodeBytes(ByteUtils.bytes32ToBytes(balanceTreeRoot));
         bytes memory encoded = RLPEncoding.encodeList(bytesArray);
-        StemCore.InspecBlock memory decoded = StemCore.decode(encoded);
+        StemCore.InspecBlock memory decoded = StemChallenge.decode(encoded);
         Assert.equal(decoded.creator, creator, "The expected address is 0xddb69b5181dca4d269be92819c9c7ab461be2410");
+    }
+
+    function testEncodeBytes() public {
+        /*{
+		    val: [][]byte{
+			    {0, 1, 2},
+			    {3, 4, 5},
+			    {6, 255},
+		    },
+		    output: "CB83000102830304058206FF",
+        }*/
+        bytes memory element1 = hex"000102";
+        bytes memory element2 = hex"030405";
+        bytes memory element3 = hex"06ff";
+        bytes[] memory bytesArray = new bytes[](3);
+        bytesArray[0] = RLPEncoding.encodeBytes(element1);
+        bytesArray[1] = RLPEncoding.encodeBytes(element2);
+        bytesArray[2] = RLPEncoding.encodeBytes(element3);
+        bytes memory encoded = RLPEncoding.encodeList(bytesArray);
+        bytes memory expected = hex"CB83000102830304058206FF";
+        Assert.equal(keccak256(encoded), keccak256(expected), "code not match");
+
+        expected = hex"80";
+        encoded = RLPEncoding.encodeUint(uint256(128));
+        Assert.equal(keccak256(encoded), keccak256(expected), "code not match");
     }
 
     function testMerkleTree() public {
@@ -116,33 +141,47 @@ contract TestStemChallengeSubmission {
     function testChallengeSubmission() public {
         StemRootchain rootchain = StemRootchain(DeployedAddresses.StemRootchain());
         address testAddress = 0x627306090abaB3A6e1400e9345bC60c78a8BEf57;
-        bytes32 txTreeRoot = 0xc810ba2f7f7d10159a42effd535fd92e3ebf65c913dfa13fcbf874b124677bea;
-        bytes32 balanceTreeRoot = 0x0541f8a317ff1b9e13379d46f5d67062666b74eefad90431e9fe46b3ed7d723e;
+
         bytes[] memory bytesArray = new bytes[](3);
         bytesArray[0] = RLPEncoding.encodeAddress(testAddress);
-        bytesArray[1] = RLPEncoding.encodeBytes(ByteUtils.bytes32ToBytes(txTreeRoot));
-        bytesArray[2] = RLPEncoding.encodeBytes(ByteUtils.bytes32ToBytes(balanceTreeRoot));
+        bytes32 byteHash = 0xc810ba2f7f7d10159a42effd535fd92e3ebf65c913dfa13fcbf874b124677bea;
+        bytesArray[1] = RLPEncoding.encodeBytes(ByteUtils.bytes32ToBytes(byteHash));
+        byteHash = 0x0541f8a317ff1b9e13379d46f5d67062666b74eefad90431e9fe46b3ed7d723e;
+        bytesArray[2] = RLPEncoding.encodeBytes(ByteUtils.bytes32ToBytes(byteHash));
         bytes memory inspecBlock = RLPEncoding.encodeList(bytesArray);
         //bytes32 inspecBlockHash = keccak256(inspecBlock);
         //emit printHash(inspecBlockHash);
         //bytes32 expected = 0x7ad0aaeda878288df352b2dd34ad57041ba304a726219e7861b62a013a94cf6c;
         //Assert.equal(inspecBlockHash, expected, "not match");
         bytes memory inspecBlockSignature = hex"689fd4a4732083a8bcca36950816d90b96b84cad7653e56d9c0eb4454e5da69a18a162b8893362b01e747a3d6885ce3bb761086af9dc589f48c9c9e346e44ea100";
-        bytes32 leaf = 0x4cce1aa6276215c3cea7ff379de9b1d796398cf38490164422e3dcca3df50e45;
+        byteHash = 0x4cce1aa6276215c3cea7ff379de9b1d796398cf38490164422e3dcca3df50e45;
         bytes32 p1 = 0xc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b;
         bytes32 p2 = 0xce1009a74105bfaa44931cf2052443ee19dab7e9d0d508c2b7f3abf6200204c9;
         bytes memory proof = abi.encodePacked(p1, p2);
-        bytes[] memory stateArray = new bytes[](3);
-        stateArray[0] = RLPEncoding.encodeAddress(testAddress);
-        stateArray[1] = RLPEncoding.encodeUint(uint256(1234565890));
-        stateArray[2] = RLPEncoding.encodeUint(uint256(1));
-        bytes memory encodedState = RLPEncoding.encodeList(stateArray);
-        // insufficient challenge bond
-        //rootchain.challengeSubmittedBlock.value(34567890)(testAddress, inspecBlock, inspecBlockSignature, leaf, 1, proof, abi.encodePacked(uint256(10)), 1, proof);
-        rootchain.challengeSubmittedBlock.value(1234567890)(testAddress, inspecBlock, inspecBlockSignature, leaf, 1, proof, encodedState, 1, proof);
+
+        bytesArray[0] = RLPEncoding.encodeAddress(testAddress);
+        bytesArray[1] = RLPEncoding.encodeUint(uint256(1234565890));
+        bytesArray[2] = RLPEncoding.encodeUint(uint256(1));
+        bytes memory encodedState = RLPEncoding.encodeList(bytesArray);
+
+        bytes[] memory proofArray = new bytes[](2);
+        proofArray[0] = RLPEncoding.encodeBytes(proof);
+        proofArray[1] = RLPEncoding.encodeBytes(proof);
+        bytes memory encodedProof = RLPEncoding.encodeList(proofArray);
+        proofArray[0] = RLPEncoding.encodeUint(uint256(1));
+        proofArray[1] = RLPEncoding.encodeUint(uint256(1));
+        bytes memory encodedIndices = RLPEncoding.encodeList(proofArray);
+         // insufficient challenge bond
+        //rootchain.challengeSubmittedBlock.value(34567890)(testAddress, inspecBlock, inspecBlockSignature, byteHash, encodedState, encodedIndices, encodedProof);
+        rootchain.challengeSubmittedBlock.value(1234567890)(testAddress, inspecBlock, inspecBlockSignature, byteHash, encodedState, encodedIndices, encodedProof);
+    }
+
+     function testAfterChallengeSubmission() public {
+        StemRootchain rootchain = StemRootchain(DeployedAddresses.StemRootchain());
         uint192 id = rootchain.getChallengeId(0);
+        address testAddress = 0x627306090abaB3A6e1400e9345bC60c78a8BEf57;
         Assert.equal(uint(id), uint(11419712055689991657431568270872319576212033412100),"Id not match");
         Assert.equal(rootchain.getChallengeTarget(id), testAddress,"challenge target not match");
         Assert.equal(rootchain.getChallengeLen(), uint256(1), "Incorrect length of challenges");
-    }
+     }
 }

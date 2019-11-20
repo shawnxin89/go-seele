@@ -3,7 +3,6 @@ pragma solidity ^0.4.24;
 // external modules
 import "./SafeMath.sol";
 import "./StemCore.sol";
-import "./StemChallenge.sol";
 
 // This library includes the construtor of a Stem contract
 library StemCreation {
@@ -12,8 +11,6 @@ library StemCreation {
      /**
      * @dev The rootchain constructor creates the rootchain
      * contract, initializing the owner and operators
-     * @param _msgValue The input amount from the creator
-     * @param _msgSender The contract creator
      * @param _subchainName The name of the subchain
      * @param _genesisInfo [balanceTreeRoot, TxTreeRoot]
      *        The hash of the genesis balance tree root
@@ -24,9 +21,9 @@ library StemCreation {
      * @param _opsDeposits The deposits of operators.
      * @param _refundAccounts The mainnet addresses of the operators
      */
-    function createSubchain(StemCore.ChainStorage storage self, uint256 _msgValue, address _msgSender, bytes32 _subchainName, bytes32[] _genesisInfo, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits, address[]  _refundAccounts) public {
+    function createSubchain(StemCore.ChainStorage storage self, bytes32 _subchainName, bytes32[] _genesisInfo, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits, address[]  _refundAccounts, address _msgSender, uint256 _msgValue) public {
         // initialize the storage variables
-        StemCore.init(self);
+        init(self);
         require(_ops.length >= self.MIN_LENGTH_OPERATOR && _ops.length <= self.MAX_LENGTH_OPERATOR, "Invalid operators length");
         require(_ops.length == _opsDeposits.length, "Invalid deposits length");
         require(_ops.length == _refundAccounts.length, "Invalid length of refund accounts");
@@ -67,5 +64,25 @@ library StemCreation {
         self.nextExitBlockIncrement = 1;
         self.curExitBlockNum = self.nextChildBlockNum.add(self.nextExitBlockIncrement);
         // By default, all the initial operators' deposit should be processed on the subchain at genesis block. (The genesis block height is 0)
+    }
+
+     /**
+    * @dev Initialize the contract parameters
+     */
+    function init(StemCore.ChainStorage storage self) internal {
+        self.MIN_LENGTH_OPERATOR = 1;
+        self.MAX_LENGTH_OPERATOR = 100;
+        self.CHILD_BLOCK_INTERVAL = 1000;
+        self.IS_NEW_OPERATOR_ALLOWED = true;
+        self.creatorMinDeposit = 1000;
+        self.childBlockChallengePeriod = 0 seconds;//1 days;
+        self.childBlockChallengeSubmissionPeriod = 0 seconds;//12 hours;
+        self.isBlockSubmissionBondReleased = true;
+        self.blockSubmissionBond = 1234567890;
+        self.blockChallengeBond = 1234567890;
+        self.operatorMinDeposit = 1234567890;
+        self.operatorExitBond = 1234567890;
+        self.userMinDeposit = 1234567890;
+        self.userExitBond = 1234567890;
     }
 }

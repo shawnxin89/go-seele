@@ -1,10 +1,6 @@
 pragma solidity ^0.4.24;
 
 // external modules
-import "./ByteUtils.sol";
-import "./ECRecovery.sol";
-import "./Merkle.sol";
-import "./PriorityQueue.sol";
 import "./RLP.sol";
 import "./RLPEncoding.sol";
 import "./SafeMath.sol";
@@ -17,10 +13,12 @@ library StemRelay {
     using RLPEncoding for address;
     using RLPEncoding for uint256;
     using RLPEncoding for bytes[];
-    using PriorityQueue for uint256[];
     using SafeMath for uint256;
 
-    function handleRelayBlock(StemCore.ChainStorage storage self, uint256 _blkNum, bytes32 _balanceTreeRoot, bytes32 _txTreeRoot, address[] _accounts, uint256[] _updatedBalances, uint256 _fee) public {
+    event BlockSubmitted(uint256 blkNum, uint256 timestamp);
+    event BlockReversed(uint256 blkNum);
+
+    function handleRelayBlock(StemCore.ChainStorage storage self, uint256 _blkNum, bytes32 _balanceTreeRoot, bytes32 _txTreeRoot, address[] _accounts, uint256[] _updatedBalances, uint256 _fee, address _msgSender) public {
         // make sure last submitted child block is confirmed and release last block submitter's bond
         require(StemCore.isLastChildBlockConfirmed(self), "Last block is not confirmed yet");
         require(_accounts.length == _updatedBalances.length, "The number of accounts and the number of updated balances should be the same");
@@ -37,7 +35,7 @@ library StemRelay {
 
         // Create the block.
         self.childBlocks[self.nextChildBlockNum] = StemCore.ChildBlock({
-            submitter: msg.sender,
+            submitter: _msgSender,
             balanceTreeRoot: _balanceTreeRoot,
             txTreeRoot: _txTreeRoot,
             timestamp: block.timestamp
@@ -61,7 +59,7 @@ library StemRelay {
             self.curExitBlockNum = self.nextChildBlockNum.add(self.nextExitBlockIncrement);
         }
 
-        //emit BlockSubmitted(_blkNum);
+        emit BlockSubmitted(_blkNum, block.timestamp);
 
     }
 
@@ -117,7 +115,7 @@ library StemRelay {
         // clear challenges
         StemChallenge.clearExistingBlockChallenges(self);
 
-        //emit BlockReversed(lastChildBlockNum);
+        emit BlockReversed(self.nextChildBlockNum);
     }
 
     /**
