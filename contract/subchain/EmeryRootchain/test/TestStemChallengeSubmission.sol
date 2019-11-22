@@ -13,6 +13,7 @@ contract TestStemChallengeSubmission {
     uint256 public initialBalance = 88234567890;
 
     event printHash(bytes32 data);
+    event printBytes(bytes data);
 
      function testECRecovery() public {
         //bytes memory sig = hex"004c1a125d6d77fbd4feffee267f2369f202359ce94e42273b4504f17f6c55045ddcce88d1b39d62c6a0c6e73a424d3a01d2e6036be517f1932aef715f9e20a100";
@@ -47,6 +48,28 @@ contract TestStemChallengeSubmission {
         Assert.equal(decoded.creator, creator, "The expected address is 0xddb69b5181dca4d269be92819c9c7ab461be2410");
     }
 
+    function testEncodeAddressAndUint() public {
+        /*{
+		    val: []interface{}{
+			    "0x8cd42eebf7ccc855b303e8bba75674c8f3d0f1e1",
+			    uint(10000),
+			    uint(1),
+		    },
+		    output: "DE948CD42EEBF7CCC855B303E8BBA75674C8F3D0F1E1822710851CBE991DEF",
+	    }*/
+        address element1 = 0x8cd42eebf7ccc855b303e8bba75674c8f3d0f1e1;
+        uint element2 = 10000;
+        uint element3 = 123456789999;
+        bytes[] memory bytesArray = new bytes[](3);
+        bytesArray[0] = RLPEncoding.encodeAddress(element1);
+        bytesArray[1] = RLPEncoding.encodeUint(element2);
+        bytesArray[2] = RLPEncoding.encodeUint(element3);
+        bytes memory encoded = RLPEncoding.encodeList(bytesArray);
+        bytes memory expected = hex"DE948CD42EEBF7CCC855B303E8BBA75674C8F3D0F1E1822710851CBE991DEF";
+        emit printBytes(encoded);
+        Assert.equal(keccak256(encoded), keccak256(expected), "code not match");
+    }
+
     function testEncodeBytes() public {
         /*{
 		    val: [][]byte{
@@ -65,10 +88,6 @@ contract TestStemChallengeSubmission {
         bytesArray[2] = RLPEncoding.encodeBytes(element3);
         bytes memory encoded = RLPEncoding.encodeList(bytesArray);
         bytes memory expected = hex"CB83000102830304058206FF";
-        Assert.equal(keccak256(encoded), keccak256(expected), "code not match");
-
-        expected = hex"80";
-        encoded = RLPEncoding.encodeUint(uint256(128));
         Assert.equal(keccak256(encoded), keccak256(expected), "code not match");
     }
 
