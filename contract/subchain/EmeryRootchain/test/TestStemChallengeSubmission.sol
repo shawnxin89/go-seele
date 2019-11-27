@@ -57,7 +57,7 @@ contract TestStemChallengeSubmission {
 		    },
 		    output: "DE948CD42EEBF7CCC855B303E8BBA75674C8F3D0F1E1822710851CBE991DEF",
 	    }*/
-        address element1 = 0x8cd42eebf7ccc855b303e8bba75674c8f3d0f1e1;
+        address element1 = 0x8cD42eEbf7CCc855B303E8BBA75674c8f3d0f1E1;
         uint element2 = 10000;
         uint element3 = 123456789999;
         bytes[] memory bytesArray = new bytes[](3);
@@ -193,6 +193,8 @@ contract TestStemChallengeSubmission {
          // insufficient challenge bond
         //rootchain.challengeSubmittedBlock.value(34567890)(testAddress, inspecBlock, inspecBlockSignature, byteHash, encodedState, encodedIndices, encodedProof);
         rootchain.challengeSubmittedBlock.value(1234567890)(testAddress, inspecBlock, inspecBlockSignature, byteHash, encodedState, encodedIndices, encodedProof);
+        // empty evidence
+        //rootchain.challengeSubmittedBlock.value(1234567890)(testAddress, "", "", bytes32(0), "", "", "");
     }
 
      function testAfterChallengeSubmission() public {

@@ -28,7 +28,7 @@ library StemCreation {
         require(_ops.length == _opsDeposits.length, "Invalid deposits length");
         require(_ops.length == _refundAccounts.length, "Invalid length of refund accounts");
         require(_creatorDeposit >= self.creatorMinDeposit, "Insufficient creator deposit value");
-
+        require(_genesisInfo.length == 2, "Invalid length of genesis info");
         // Setup the operators' deposits and initial fees
         self.totalDeposit = _creatorDeposit;
         for (uint256 i = 0; i < _ops.length && StemCore.isValidAddOperator(self, _ops[i], _opsDeposits[i]); i++){

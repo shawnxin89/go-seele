@@ -34,8 +34,10 @@ library StemChallenge {
         require(block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) <= self.childBlockChallengeSubmissionPeriod, "Not in challenge submission period");
 
         RLP.RLPItem[] memory addresses = _encodedAddresses.toRLPItem().toList();
-        RLP.RLPItem[] memory indices = _indices.toRLPItem().toList();
-        RLP.RLPItem[] memory proofs = _inclusionProofs.toRLPItem().toList();
+        if (_indices.length > 0 && _inclusionProofs.length > 0) {
+            RLP.RLPItem[] memory indices = _indices.toRLPItem().toList();
+            RLP.RLPItem[] memory proofs = _inclusionProofs.toRLPItem().toList();
+        }
         // Challenge target must exist.
         require(self.isExistedUsers[addresses[1].toAddress()] || self.isExistedOperators[addresses[1].toAddress()], "The challenge target doesn't exist!");
 
