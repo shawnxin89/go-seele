@@ -27,6 +27,7 @@ module.exports = function(deployer, network, accounts) {
   deployer.link(StemChallenge, StemRelay);
   deployer.deploy(StemRelay);
   deployer.link(StemCore, StemCreation);
+  deployer.link(StemRelay, StemCreation);
   deployer.deploy(StemCreation);
   deployer.link(ECRecovery, StemRootchain);
   deployer.link(PriorityQueue, StemRootchain);

@@ -53,6 +53,7 @@ library StemCore {
         uint256   totalDeposit;
         uint256   creatorDeposit;
         uint256   creatorMinDeposit;
+        bool      isFrozen;
 
         /** @dev subchain related */
         uint256 curDepositBlockNum;
@@ -112,6 +113,7 @@ library StemCore {
     */
     function createAddOperatorRequest(ChainStorage storage self, address _operator, address _refundAccount, uint256 _msgValue) public {
         //require(_msgSender == _operator || _msgSender == self.owner, "Requests should be sent by the operator or the creator");
+        require(self.isFrozen == false, "The subchain is frozen");
         require(self.IS_NEW_OPERATOR_ALLOWED, "Adding new operator is not allowed");
         require(self.isExistedOperators[_operator] == false, "Repeated operator");
         require(self.isExistedUsers[_operator] == false, "This address has been registered as a user");
@@ -143,6 +145,7 @@ library StemCore {
     */
     function createUserDepositRequest(ChainStorage storage self, address _user, address _refundAccount, uint256 _msgValue) public {
         //require(_msgSender == _user || _msgSender == self.owner, "Requests should be sent by the user or the creator");
+        require(self.isFrozen == false, "The subchain is frozen");
         require(self.isExistedOperators[_user] == false, "This address has been registered as an operator");
         require(self.deposits[_user].amount == 0 || (self.deposits[_user].amount > 0 && self.deposits[_user].isOperator == false), "An addOperator request exists for this address");
         require(isValidUserDeposit(self, _user, _msgValue), "Unable to deposit for this user");
@@ -310,6 +313,7 @@ library StemCore {
      */
     function createOperatorExitRequest(ChainStorage storage self, address _operator) public {
         //require(_msgSender == _operator, "Exit requests should be sent by the operator");
+        require(self.isFrozen == false, "The subchain is frozen");
         require(self.isExistedOperators[_operator] || self.deposits[_operator].blkNum > self.nextChildBlockNum, "This operator does not exist and does not has any deposit request");
         require(existUnresolvedRequest(self, _operator) == false, "Another unresolved request exists for this operator");
         if (self.isExistedOperators[_operator]) {
@@ -370,6 +374,7 @@ library StemCore {
      */
     function createUserExitRequest(ChainStorage storage self, address _user, uint256 _amount) public {
         //require(_msgSender == _user, "Exit requests should be sent by the user");
+        require(self.isFrozen == false, "The subchain is frozen");
         require(self.isExistedUsers[_user] || self.deposits[_user].blkNum > self.nextChildBlockNum, "This user does not exist and does not has any deposit request");
         require(existUnresolvedRequest(self, _user) == false, "Another unresolved request exists for this user");
 
@@ -477,6 +482,7 @@ library StemCore {
     * @param _operator The operator account to exit from
     */
     function executeOperatorExit(ChainStorage storage self, address _operator) public {
+        require(self.isFrozen == false, "The subchain is frozen");
         if (self.exits[_operator].amount <= 0) {return;}
         // make sure the exit is in execution period
         if (self.exits[_operator].blkNum <= self.lastChildBlockNum || self.exits[_operator].blkNum >= self.nextChildBlockNum) {return;}
@@ -515,6 +521,7 @@ library StemCore {
     * @param _user The user account to exit from
     */
     function executeUserExit(ChainStorage storage self, address _user) public {
+        require(self.isFrozen == false, "The subchain is frozen");
         if(self.exits[_user].amount <= 0) {return;}
         // make sure the exit is in execution period
         if (self.exits[_user].blkNum <= self.lastChildBlockNum || self.exits[_user].blkNum >= self.nextChildBlockNum) {return;}

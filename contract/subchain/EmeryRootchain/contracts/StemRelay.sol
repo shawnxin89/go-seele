@@ -23,6 +23,7 @@ library StemRelay {
         require(StemCore.isLastChildBlockConfirmed(self), "Last block is not confirmed yet");
         require(_accounts.length == _updatedBalances.length, "The number of accounts and the number of updated balances should be the same");
         require(self.nextChildBlockNum == _blkNum, "Invalid child block number");
+        require(self.isFrozen == false, "The subchain is frozen");
         if (!self.isBlockSubmissionBondReleased)
         {
             //self.childBlocks[self.lastChildBlockNum].submitter.transfer(self.blockSubmissionBond);
@@ -95,8 +96,32 @@ library StemRelay {
     }
 
     function doReverseBlock(StemCore.ChainStorage storage self, uint256 _blkNum) public {
+        require(self.isFrozen == false, "The subchain is frozen");
         require(block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) >= self.childBlockChallengePeriod, "Last submitted block is in challenge period");
         //require(self.childBlockChallengeId.length > 0, "No existing child block challenges");
+        require(self.lastChildBlockNum == _blkNum, "Invalid child block number");
+        delete self.childBlocks[self.lastChildBlockNum];
+        self.nextChildBlockNum = self.lastChildBlockNum;
+        self.lastChildBlockNum = StemCore.getLastChildBlockNumber(self);
+
+        // reverse the balances updated by last submitted child block
+        reverseBalancesAndFee(self);
+        reverseOperatorIndices(self);
+
+        // only the first challenger gets the blockSubmissionBond
+        /*if (!self.isBlockSubmissionBondReleased)
+        {
+            self.childBlockChallenges[self.childBlockChallengeId[0]].challengerAddress.transfer(self.blockSubmissionBond);
+            self.isBlockSubmissionBondReleased = true;
+        }*/
+        // clear challenges
+        StemChallenge.clearExistingBlockChallenges(self);
+
+        emit BlockReversed(self.nextChildBlockNum);
+    }
+
+    function forceReverseBlock(StemCore.ChainStorage storage self, uint256 _blkNum) public {
+
         require(self.lastChildBlockNum == _blkNum, "Invalid child block number");
         delete self.childBlocks[self.lastChildBlockNum];
         self.nextChildBlockNum = self.lastChildBlockNum;

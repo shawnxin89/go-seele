@@ -30,6 +30,7 @@ library StemChallenge {
      */
     function processChallenge(StemCore.ChainStorage storage self, bytes _encodedAddresses, bytes _inspecBlock, bytes _inspecBlockSignature, bytes32 _inspecTxHash, bytes _inspecState, bytes _indices, bytes _inclusionProofs) 
     public {
+        require(self.isFrozen == false, "The subchain is frozen");
         // make sure it is within challenge submission period
         require(block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) <= self.childBlockChallengeSubmissionPeriod, "Not in challenge submission period");
 
@@ -121,6 +122,7 @@ library StemChallenge {
      */
     function handleResponseToChallenge(StemCore.ChainStorage storage self, uint _challengeIndex, bytes _recentTxs, bytes _signatures, bytes _indices, bytes _preState, bytes _inclusionProofs, address _msgSender) public {
         //require(block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) <= self.childBlockChallengePeriod, "Not in challenge period");
+        require(self.isFrozen == false, "The subchain is frozen");
         require(self.childBlockChallengeId.length > _challengeIndex, "Invalid challenge index");
         // 0: txLeafIndex, 1: preStateLeafIndex, 2: stateLeafIndex
         RLP.RLPItem[] memory indices = _indices.toRLPItem().toList();

@@ -3,6 +3,7 @@ pragma solidity ^0.4.24;
 // external modules
 import "./SafeMath.sol";
 import "./StemCore.sol";
+import "./StemRelay.sol";
 
 // This library includes the construtor of a Stem contract
 library StemCreation {
@@ -84,5 +85,53 @@ library StemCreation {
         self.operatorExitBond = 1234567890;
         self.userMinDeposit = 1234567890;
         self.userExitBond = 1234567890;
+        self.isFrozen = false;
+    }
+
+    /**
+    * @dev Discard the subchain
+     */
+    function discardSubchain(StemCore.ChainStorage storage self, address _msgSender) public {
+        require(self.isFrozen == false, "The subchain is frozen");
+        //require(_msgSender == self.owner, "msg.sender must be the subchain owner");
+        self.isFrozen = true;
+        if (StemCore.isLastChildBlockConfirmed(self) == false) {
+            StemRelay.doReverseBlock(self, self.lastChildBlockNum);
+        }
+        // return owner's deposit
+        self.owner.transfer(self.creatorDeposit);
+        address acc;
+        // return users' deposit
+        for (uint i = 0; i < self.userIndices.length; i++) {
+            acc = self.userIndices[i];
+            self.refundAddress[acc].transfer(self.users[acc]);
+        }
+        // return operators' deposit
+        for (i = 0; i < self.operatorIndices.length; i++) {
+            acc = self.operatorIndices[i];
+            self.refundAddress[acc].transfer(self.operators[acc]);
+        }
+        // return the deposits in the deposit requests
+        for (i = 0; i < self.depositsIndices.length; i++) {
+            acc = self.depositsIndices[i];
+            if (self.deposits[acc].blkNum > self.lastChildBlockNum) {
+                self.deposits[acc].refundAccount.transfer(self.deposits[acc].amount);
+            }
+        }
+
+        // return all the exit bonds
+        for (i = 0; i < self.exitsIndices.length; i++) {
+            acc = self.exitsIndices[i];
+            if (self.exits[acc].executed == false) {
+                self.refundAddress[acc].transfer(self.exits[acc].amount);
+            }
+        }
+
+        // return blockSubmissionBond
+        if (!self.isBlockSubmissionBondReleased)
+        {
+            self.childBlocks[self.lastChildBlockNum].submitter.transfer(self.blockSubmissionBond);
+            self.isBlockSubmissionBondReleased = true;
+        }
     }
 }

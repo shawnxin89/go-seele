@@ -66,6 +66,13 @@ contract StemRootchain {
     }
 
     /**
+    * @dev discard the subchain
+     */
+     function discard() public {
+        StemCreation.discardSubchain(data, msg.sender);
+     }
+
+    /**
     * @dev Create a request to add new operator to the subchain
     * @param _operator The operator to be added
     * @param _refundAccount The account where the fund will be returned
@@ -142,6 +149,7 @@ contract StemRootchain {
     */
     function feeExit(address _operator, uint256 _amount) public {
         //require(msg.sender == _operator, "Exit requests should be sent from the operator");
+        require(data.isFrozen == false, "The subchain is frozen");
         require(data.isLastChildBlockConfirmed(), "Last block is not confirmed yet");
         require(data.operatorFee[_operator] >= _amount, "Invalid exit amount");
         data.refundAddress[_operator].transfer(_amount);
