@@ -35,22 +35,22 @@ library StemChallenge {
         require(block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) <= self.childBlockChallengeSubmissionPeriod, "Not in challenge submission period");
 
         RLP.RLPItem[] memory addresses = _encodedAddresses.toRLPItem().toList();
-        if (_indices.length > 0 && _inclusionProofs.length > 0) {
-            RLP.RLPItem[] memory indices = _indices.toRLPItem().toList();
-            RLP.RLPItem[] memory proofs = _inclusionProofs.toRLPItem().toList();
-        }
-        // Challenge target must exist.
+         // Challenge target must exist.
         require(self.isExistedUsers[addresses[1].toAddress()] || self.isExistedOperators[addresses[1].toAddress()], "The challenge target doesn't exist!");
 
         if (_inspecBlock.length > 0) {
+            if (_indices.length > 0 && _inclusionProofs.length > 0) {
+                RLP.RLPItem[] memory indices = _indices.toRLPItem().toList();
+                RLP.RLPItem[] memory proofs = _inclusionProofs.toRLPItem().toList();
+            }
             // decode _inspecBlock
             StemCore.InspecBlock memory decodedBlock = decode(_inspecBlock);
             require(self.isExistedOperators[decodedBlock.creator], "The block is not created by existing operators");
+            require(decodedBlock.height <= self.lastChildBlockNum && decodedBlock.height > self.lastChildBlockNum.sub(self.CHILD_BLOCK_INTERVAL), "The block is not in last period");
             require(decodedBlock.creator == ECRecovery.recover(keccak256(_inspecBlock), _inspecBlockSignature), "Invalid signature");
             require(Merkle.checkMembership(_inspecTxHash, indices[0].toUint(), decodedBlock.txTreeRoot, proofs[0].toData()), "Failed to prove the inclusion of the tx");
             // get the hash of the state
             require(Merkle.checkMembership(keccak256(_inspecState), indices[1].toUint(), decodedBlock.balanceTreeRoot, proofs[1].toData()), "Failed to prove the inclusion of the state");
-            //TODO consider the case that _inspecTxHash is nil
             createChildBlockChallenge(self, addresses[0].toAddress(), addresses[1].toAddress(), _inspecTxHash, _inspecState);
         } else {
             createChildBlockChallenge(self, addresses[0].toAddress(), addresses[1].toAddress(), bytes32(0), "");
@@ -121,6 +121,7 @@ library StemChallenge {
     * @param _inclusionProofs The inclusion proofs of rencentTxs/previous State/Current State
      */
     function handleResponseToChallenge(StemCore.ChainStorage storage self, uint _challengeIndex, bytes _recentTxs, bytes _signatures, bytes _indices, bytes _preState, bytes _inclusionProofs, address _msgSender) public {
+        // production environment
         //require(block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) <= self.childBlockChallengePeriod, "Not in challenge period");
         require(self.isFrozen == false, "The subchain is frozen");
         require(self.childBlockChallengeId.length > _challengeIndex, "Invalid challenge index");
@@ -276,8 +277,9 @@ library StemChallenge {
         StemCore.InspecBlock memory decodedBlock;
 
         decodedBlock.creator = inputs[0].toAddress();
-        decodedBlock.txTreeRoot = inputs[1].toBytes32();
-        decodedBlock.balanceTreeRoot = inputs[2].toBytes32();
+        decodedBlock.height = inputs[1].toUint();
+        decodedBlock.txTreeRoot = inputs[2].toBytes32();
+        decodedBlock.balanceTreeRoot = inputs[3].toBytes32();
         return decodedBlock;
     }
 }

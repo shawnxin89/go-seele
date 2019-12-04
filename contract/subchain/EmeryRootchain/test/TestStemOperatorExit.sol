@@ -22,7 +22,7 @@ contract TestStemOperatorExit {
     uint256 expectedDepositAmount = 2234567890;
     Assert.equal(rootchain.getDepositAmount(expectedOperatorAddress), expectedDepositAmount, "expectedDepositAmount = 2234567890");
     Assert.equal(rootchain.getContractBalance(), 10469135780, "The balance of the contract is 10469135780");
-    rootchain.operatorExitRequest.value(1234567890)(expectedOperatorAddress);
+    rootchain.operatorExitRequest(expectedOperatorAddress);
     expectedDepositBlk = 0;
     Assert.equal(rootchain.getDepositBlockNum(expectedOperatorAddress), expectedDepositBlk, "expectedDepositBlk is 0");
     expectedDepositAmount = 0;
@@ -32,10 +32,10 @@ contract TestStemOperatorExit {
     // new exit request
     address operatorToExit = 0xCA35b7d915458EF540aDe6068dFe2F44E8fa733c;
     // insufficient exit bond
-    //rootchain.operatorExitRequest.value(7890)(operatorToExit);
+    //rootchain.operatorExitRequest(operatorToExit);
     // wrong operator address
     // address operatorToExit = 0x821aEa9a577a9b44299B9c15c88cf3087F3b5544;
-    rootchain.operatorExitRequest.value(1234567890)(operatorToExit);
+    rootchain.operatorExitRequest(operatorToExit);
     uint256 expectedExitBlk = 1001;
     Assert.equal(rootchain.getExitBlockNum(operatorToExit), expectedExitBlk, "expectedExitBlk is 1001");
     uint256 expectedExitAmount = 1234567890;
@@ -45,7 +45,7 @@ contract TestStemOperatorExit {
     uint256 expectedCurExitBlk = 1001;
     Assert.equal(rootchain.getCurExitBlockNum(), expectedCurExitBlk, "expectedCurExitBlk is 1001");
     // repeated request
-    rootchain.operatorExitRequest.value(1234567890)(operatorToExit);
+    rootchain.operatorExitRequest(operatorToExit);
     expectedExitBlk = 1001;
     Assert.equal(rootchain.getExitBlockNum(operatorToExit), expectedExitBlk, "expectedExitBlk is 1001");
     expectedExitAmount = 1234567890;
@@ -60,7 +60,7 @@ contract TestStemOperatorExit {
     rootchain.submitBlock.value(1234567890)(1000, 0x4f2df4a21621b18c71619239c398657a23f198a40a8deff701e340e6e34d1234, 0x4f2df4a21621b18c71619239c398657a23f198a40a8deff701e340e6e34d1234, testAddresses, testBalances, 0);
     uint256 expectedTotalBalance = 4938271560;
     Assert.equal(rootchain.getTotalBalance(), expectedTotalBalance, "ExpectedTotalBalance is 4938271560");
-    Assert.equal(rootchain.getContractBalance(), 10703703670, "The balance of the contract is 10703703670");
+    Assert.equal(rootchain.getContractBalance(), 9469135780, "The balance of the contract is 10703703670");
     uint expected = 4;
     Assert.equal(rootchain.getOpsLen(), expected, "operators length is 4");
 

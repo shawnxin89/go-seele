@@ -21,6 +21,8 @@ library StemCreation {
      * @param _ops The operators.
      * @param _opsDeposits The deposits of operators.
      * @param _refundAccounts The mainnet addresses of the operators
+     * @param _msgSender the creator of the contract
+     * @param _msgValue  value deposited into the contract
      */
     function createSubchain(StemCore.ChainStorage storage self, bytes32 _subchainName, bytes32[] _genesisInfo, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits, address[]  _refundAccounts, address _msgSender, uint256 _msgValue) public {
         // initialize the storage variables
@@ -78,11 +80,11 @@ library StemCreation {
         self.creatorMinDeposit = 1000;
         self.childBlockChallengePeriod = 0 seconds;//1 days;
         self.childBlockChallengeSubmissionPeriod = 0 seconds;//12 hours;
+        self.relayTimeout = 12 hours;
         self.isBlockSubmissionBondReleased = true;
         self.blockSubmissionBond = 1234567890;
         self.blockChallengeBond = 1234567890;
         self.operatorMinDeposit = 1234567890;
-        self.operatorExitBond = 1234567890;
         self.userMinDeposit = 1234567890;
         self.userExitBond = 1234567890;
         self.isFrozen = false;
@@ -91,12 +93,12 @@ library StemCreation {
     /**
     * @dev Discard the subchain
      */
-    function discardSubchain(StemCore.ChainStorage storage self, address _msgSender) public {
+    function discardSubchain(StemCore.ChainStorage storage self) public {
         require(self.isFrozen == false, "The subchain is frozen");
-        //require(_msgSender == self.owner, "msg.sender must be the subchain owner");
+
         self.isFrozen = true;
         if (StemCore.isLastChildBlockConfirmed(self) == false) {
-            StemRelay.doReverseBlock(self, self.lastChildBlockNum);
+            StemRelay.forceReverseBlock(self, self.lastChildBlockNum);
         }
         // return owner's deposit
         self.owner.transfer(self.creatorDeposit);
@@ -119,11 +121,11 @@ library StemCreation {
             }
         }
 
-        // return all the exit bonds
+        // return all the user exit bonds
         for (i = 0; i < self.exitsIndices.length; i++) {
             acc = self.exitsIndices[i];
-            if (self.exits[acc].executed == false) {
-                self.refundAddress[acc].transfer(self.exits[acc].amount);
+            if (self.exits[acc].isOperator == false || self.exits[acc].executed == false) {
+                self.refundAddress[acc].transfer(self.userExitBond);
             }
         }
 

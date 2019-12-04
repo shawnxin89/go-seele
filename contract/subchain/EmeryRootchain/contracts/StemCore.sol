@@ -36,6 +36,7 @@ library StemCore {
 
      struct InspecBlock {
         address creator;
+        uint256 height;
         bytes32 txTreeRoot;
         bytes32 balanceTreeRoot;
     }
@@ -65,6 +66,7 @@ library StemCore {
         mapping(uint256 => ChildBlock) childBlocks;
         uint256 childBlockChallengePeriod;
         uint256 childBlockChallengeSubmissionPeriod;
+        uint256 relayTimeout;
         bool    isBlockSubmissionBondReleased;
         uint256 blockSubmissionBond;
         uint256 blockChallengeBond;
@@ -77,7 +79,6 @@ library StemCore {
         mapping(address => uint256) operatorFee;
         mapping(address => bool)    isExistedOperators;
         uint256 operatorMinDeposit;
-        uint256 operatorExitBond;
 
         /** @dev User related */
         address[] userIndices;
@@ -111,7 +112,8 @@ library StemCore {
     * @param _operator      Operator address
     * @param _refundAccount The account to get the fund back
     */
-    function createAddOperatorRequest(ChainStorage storage self, address _operator, address _refundAccount, uint256 _msgValue) public {
+    function createAddOperatorRequest(ChainStorage storage self, address _operator, address _refundAccount, address _msgSender, uint256 _msgValue) public {
+        // production environment
         //require(_msgSender == _operator || _msgSender == self.owner, "Requests should be sent by the operator or the creator");
         require(self.isFrozen == false, "The subchain is frozen");
         require(self.IS_NEW_OPERATOR_ALLOWED, "Adding new operator is not allowed");
@@ -143,7 +145,8 @@ library StemCore {
     * @param _user      user address
     * @param _refundAccount The account to get the fund back
     */
-    function createUserDepositRequest(ChainStorage storage self, address _user, address _refundAccount, uint256 _msgValue) public {
+    function createUserDepositRequest(ChainStorage storage self, address _user, address _refundAccount, address _msgSender, uint256 _msgValue) public {
+        // production environment
         //require(_msgSender == _user || _msgSender == self.owner, "Requests should be sent by the user or the creator");
         require(self.isFrozen == false, "The subchain is frozen");
         require(self.isExistedOperators[_user] == false, "This address has been registered as an operator");
@@ -311,36 +314,20 @@ library StemCore {
     * @dev Create an operator exit request. It's a complete exit.
     * @param _operator The operator account
      */
-    function createOperatorExitRequest(ChainStorage storage self, address _operator) public {
-        //require(_msgSender == _operator, "Exit requests should be sent by the operator");
+    function createOperatorExitRequest(ChainStorage storage self, address _operator, address _msgSender) public {
+        // production environment
+        //require(_msgSender == _operator || _msgSender == self.owner, "Exit requests should be sent by the operator");
         require(self.isFrozen == false, "The subchain is frozen");
-        require(self.isExistedOperators[_operator] || self.deposits[_operator].blkNum > self.nextChildBlockNum, "This operator does not exist and does not has any deposit request");
+        require(self.isExistedOperators[_operator] || self.deposits[_operator].blkNum > self.nextChildBlockNum, "This operator does not exist and does not have any deposit request");
         require(existUnresolvedRequest(self, _operator) == false, "Another unresolved request exists for this operator");
-        if (self.isExistedOperators[_operator]) {
-            if (isLastChildBlockConfirmed(self)) {
-                // last block is confirmed
-                require(self.operators[_operator] >= self.operatorMinDeposit, "Invalid deposit amount");
-            } else {
-                uint index = self.accountsBackup.length;
-                for (uint i = 0; i < self.accountsBackup.length; i++) {
-                    if (self.accountsBackup[i] == _operator) {
-                        index = i;
-                        break;
-                    }
-                }
-                require(self.operators[_operator] >= self.operatorMinDeposit || (index < self.accountsBackup.length && self.balancesBackup[index] >= self.operatorMinDeposit) , "Invalid deposit amount");
-            }
-        }
 
         // merge with existing deposit or exit requests
         if (self.exits[_operator].blkNum > self.nextChildBlockNum) {
-            // an operator exit already exists
-            self.refundAddress[_operator].transfer(self.operatorExitBond);
             return;
         } else if (self.deposits[_operator].blkNum > self.nextChildBlockNum) {
             // exit request and deposit request cancel out each other
-            // TODO: emit an event to cancel deposit request
-            self.refundAddress[_operator].transfer(self.deposits[_operator].amount.add(self.operatorExitBond));
+            // emit an event to cancel deposit request
+            self.deposits[_operator].refundAccount.transfer(self.deposits[_operator].amount);
             deleteDepositsIndicesByAccount(self, _operator);
             delete self.deposits[_operator];
             emit AddOperatorRequest(
@@ -372,7 +359,8 @@ library StemCore {
     * @param _user User account
     * @param _amount Exit amount
      */
-    function createUserExitRequest(ChainStorage storage self, address _user, uint256 _amount) public {
+    function createUserExitRequest(ChainStorage storage self, address _user, uint256 _amount, address _msgSender) public {
+        // production environment
         //require(_msgSender == _user, "Exit requests should be sent by the user");
         require(self.isFrozen == false, "The subchain is frozen");
         require(self.isExistedUsers[_user] || self.deposits[_user].blkNum > self.nextChildBlockNum, "This user does not exist and does not has any deposit request");
@@ -488,18 +476,14 @@ library StemCore {
         if (self.exits[_operator].blkNum <= self.lastChildBlockNum || self.exits[_operator].blkNum >= self.nextChildBlockNum) {return;}
         if (!isLastChildBlockConfirmed(self)) {return;}
         if (self.exits[_operator].executed == true) {return;}
-        if (self.operators[_operator] < self.operatorMinDeposit) {
-            deleteExitsIndicesByAccount(self, _operator);
-            delete self.exits[_operator];
-        } else {
-            self.refundAddress[_operator].transfer(self.operatorFee[_operator].add(self.operators[_operator].add(self.operatorExitBond)));
-            delete self.operators[_operator];
-            delete self.operatorFee[_operator];
-            self.isExistedOperators[_operator] = false;
-            deleteOperatorIndicesByAccount(self, _operator);
-            self.totalDeposit = self.totalDeposit.sub(self.operators[_operator].add(self.operatorFee[_operator]));
-            self.exits[_operator].executed = true;
-        }
+        self.refundAddress[_operator].transfer(self.operatorFee[_operator].add(self.operators[_operator]));
+        delete self.operators[_operator];
+        delete self.operatorFee[_operator];
+        self.isExistedOperators[_operator] = false;
+        deleteOperatorIndicesByAccount(self, _operator);
+        self.totalDeposit = self.totalDeposit.sub(self.operators[_operator].add(self.operatorFee[_operator]));
+        self.exits[_operator].executed = true;
+
     }
 
     /**
@@ -593,6 +577,9 @@ library StemCore {
     * @return true if last submitted child block is confirmed.
     */
     function isLastChildBlockConfirmed(ChainStorage storage self) public view returns(bool) {
+        if (self.lastChildBlockNum == 0) {
+            return true;
+        }
         return block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) >= self.childBlockChallengePeriod && self.childBlockChallengeId.length == 0;
     }
 }

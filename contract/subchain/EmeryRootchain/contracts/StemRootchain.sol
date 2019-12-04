@@ -69,7 +69,19 @@ contract StemRootchain {
     * @dev discard the subchain
      */
      function discard() public {
-        StemCreation.discardSubchain(data, msg.sender);
+        // production environment
+        //require(msg.sender == data.owner, "msg.sender must be the subchain owner");
+        StemCreation.discardSubchain(data);
+     }
+
+     /**
+     * @dev discard the subchain if child block timeouts
+      */
+      function timeOutDiscard() public {
+        uint256 lastConfirmedBlk = data.getLastConfirmedChildBlockNumber();
+        if (block.timestamp.sub(data.childBlocks[lastConfirmedBlk].timestamp) > data.relayTimeout) {
+            StemCreation.discardSubchain(data);
+        }
      }
 
     /**
@@ -78,7 +90,7 @@ contract StemRootchain {
     * @param _refundAccount The account where the fund will be returned
     */
     function addOperatorRequest(address _operator, address _refundAccount) public payable {
-        data.createAddOperatorRequest(_operator, _refundAccount, msg.value);
+        data.createAddOperatorRequest(_operator, _refundAccount, msg.sender, msg.value);
     }
 
     /**
@@ -87,7 +99,7 @@ contract StemRootchain {
     * @param _refundAccount The account where the fund will be returned
     */
     function userDepositRequest(address _user, address _refundAccount) public payable {
-        data.createUserDepositRequest(_user, _refundAccount, msg.value);
+        data.createUserDepositRequest(_user, _refundAccount, msg.sender, msg.value);
     }
 
     /**
@@ -106,8 +118,8 @@ contract StemRootchain {
     * @dev Create a request for operator exit
     * @param _operator The operator account to exit from
     */
-    function operatorExitRequest(address _operator) public payable onlyWithValue(data.operatorExitBond) {
-        data.createOperatorExitRequest(_operator);
+    function operatorExitRequest(address _operator) public {
+        data.createOperatorExitRequest(_operator, msg.sender);
     }
 
     /**
@@ -123,7 +135,7 @@ contract StemRootchain {
     * @param _amount Amount of fund to exit
     */
     function userExitRequest(address _user, uint256 _amount) public payable onlyWithValue(data.userExitBond) {
-        data.createUserExitRequest(_user, _amount);
+        data.createUserExitRequest(_user, _amount, msg.sender);
     }
 
     function execUserExit(address _user) public {
@@ -148,6 +160,7 @@ contract StemRootchain {
     * @param _amount The amount of fee to withdraw
     */
     function feeExit(address _operator, uint256 _amount) public {
+        // production environment
         //require(msg.sender == _operator, "Exit requests should be sent from the operator");
         require(data.isFrozen == false, "The subchain is frozen");
         require(data.isLastChildBlockConfirmed(), "Last block is not confirmed yet");
@@ -165,7 +178,7 @@ contract StemRootchain {
      * @param _updatedBalances The updated balance of the accounts
      * @param _fee The fee income of every operator during last period
      */
-     function submitBlock(uint256 _blkNum, bytes32 _balanceTreeRoot, bytes32 _txTreeRoot, address[] _accounts, uint256[] _updatedBalances, uint256 _fee) public payable onlyWithValue(data.blockSubmissionBond) {//onlyOperator onlyWithValue(data.blockSubmissionBond) {
+     function submitBlock(uint256 _blkNum, bytes32 _balanceTreeRoot, bytes32 _txTreeRoot, address[] _accounts, uint256[] _updatedBalances, uint256 _fee) public payable onlyWithValue(data.blockSubmissionBond) {//production environment: onlyOperator onlyWithValue(data.blockSubmissionBond) {
         StemRelay.handleRelayBlock(data, _blkNum, _balanceTreeRoot, _txTreeRoot, _accounts, _updatedBalances, _fee, msg.sender);
      }
 
@@ -359,11 +372,8 @@ contract StemRootchain {
     function getChallengeLen() public view returns(uint256) {
         return data.childBlockChallengeId.length;
     }
-    /**
-    * @dev Get child block's hash
-    * @param _blockNum Is the submitted block number
-    */
-    /*function getChildBlockTimestamp(uint256 _blockNum) public view returns(uint256) {
-       return childBlocks[_blockNum].timestamp;
-    }*/
+
+    function getChildBlockTimestamp(uint256 _blockNum) public view returns(uint256) {
+       return data.childBlocks[_blockNum].timestamp;
+    }
 }

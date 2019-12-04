@@ -26,6 +26,7 @@ library StemRelay {
         require(self.isFrozen == false, "The subchain is frozen");
         if (!self.isBlockSubmissionBondReleased)
         {
+            // production environment
             //self.childBlocks[self.lastChildBlockNum].submitter.transfer(self.blockSubmissionBond);
             address testAddress = 0x4B0897b0513fdC7C541B6d9D7E929C4e5364D2dB;
             testAddress.transfer(self.blockSubmissionBond);
@@ -97,7 +98,9 @@ library StemRelay {
 
     function doReverseBlock(StemCore.ChainStorage storage self, uint256 _blkNum) public {
         require(self.isFrozen == false, "The subchain is frozen");
+        require(_blkNum > 0, "Genesis block is irreversible");
         require(block.timestamp.sub(self.childBlocks[self.lastChildBlockNum].timestamp) >= self.childBlockChallengePeriod, "Last submitted block is in challenge period");
+        // production environment
         //require(self.childBlockChallengeId.length > 0, "No existing child block challenges");
         require(self.lastChildBlockNum == _blkNum, "Invalid child block number");
         delete self.childBlocks[self.lastChildBlockNum];
@@ -109,6 +112,7 @@ library StemRelay {
         reverseOperatorIndices(self);
 
         // only the first challenger gets the blockSubmissionBond
+        // production environment
         /*if (!self.isBlockSubmissionBondReleased)
         {
             self.childBlockChallenges[self.childBlockChallengeId[0]].challengerAddress.transfer(self.blockSubmissionBond);
@@ -121,7 +125,7 @@ library StemRelay {
     }
 
     function forceReverseBlock(StemCore.ChainStorage storage self, uint256 _blkNum) public {
-
+        require(_blkNum > 0, "Genesis block is irreversible");
         require(self.lastChildBlockNum == _blkNum, "Invalid child block number");
         delete self.childBlocks[self.lastChildBlockNum];
         self.nextChildBlockNum = self.lastChildBlockNum;
@@ -131,12 +135,6 @@ library StemRelay {
         reverseBalancesAndFee(self);
         reverseOperatorIndices(self);
 
-        // only the first challenger gets the blockSubmissionBond
-        /*if (!self.isBlockSubmissionBondReleased)
-        {
-            self.childBlockChallenges[self.childBlockChallengeId[0]].challengerAddress.transfer(self.blockSubmissionBond);
-            self.isBlockSubmissionBondReleased = true;
-        }*/
         // clear challenges
         StemChallenge.clearExistingBlockChallenges(self);
 
