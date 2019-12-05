@@ -329,6 +329,10 @@ contract StemRootchain {
        return data.deposits[_account].isOperator;
     }
 
+    function getDepositAccounts() public view returns(address[]) {
+       return data.depositsIndices;
+    }
+
     function getExitsLen() public view returns(uint256) {
        return data.exitsIndices.length;
     }
@@ -347,6 +351,10 @@ contract StemRootchain {
 
     function getExitStatus(address _account) public view returns(bool) {
        return data.exits[_account].executed;
+    }
+
+    function getExitAccounts() public view returns(address[]) {
+       return data.exitsIndices;
     }
 
     function getTotalBalance() public view returns(uint256) {

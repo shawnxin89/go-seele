@@ -39,22 +39,37 @@ library StemChallenge {
         require(self.isExistedUsers[addresses[1].toAddress()] || self.isExistedOperators[addresses[1].toAddress()], "The challenge target doesn't exist!");
 
         if (_inspecBlock.length > 0) {
-            if (_indices.length > 0 && _inclusionProofs.length > 0) {
-                RLP.RLPItem[] memory indices = _indices.toRLPItem().toList();
-                RLP.RLPItem[] memory proofs = _inclusionProofs.toRLPItem().toList();
-            }
+            require(_indices.length > 0 && _inclusionProofs.length > 0, "Invalid length");
+            RLP.RLPItem[] memory indices = _indices.toRLPItem().toList();
+            RLP.RLPItem[] memory proofs = _inclusionProofs.toRLPItem().toList();
+
             // decode _inspecBlock
             StemCore.InspecBlock memory decodedBlock = decode(_inspecBlock);
             require(self.isExistedOperators[decodedBlock.creator], "The block is not created by existing operators");
             require(decodedBlock.height <= self.lastChildBlockNum && decodedBlock.height > self.lastChildBlockNum.sub(self.CHILD_BLOCK_INTERVAL), "The block is not in last period");
             require(decodedBlock.creator == ECRecovery.recover(keccak256(_inspecBlock), _inspecBlockSignature), "Invalid signature");
             require(Merkle.checkMembership(_inspecTxHash, indices[0].toUint(), decodedBlock.txTreeRoot, proofs[0].toData()), "Failed to prove the inclusion of the tx");
-            // get the hash of the state
-            require(Merkle.checkMembership(keccak256(_inspecState), indices[1].toUint(), decodedBlock.balanceTreeRoot, proofs[1].toData()), "Failed to prove the inclusion of the state");
+            // production environment
+            //require(Merkle.checkMembership(keccak256(_inspecState), indices[1].toUint(), decodedBlock.balanceTreeRoot, proofs[1].toData()), "Failed to prove the inclusion of the state");
             createChildBlockChallenge(self, addresses[0].toAddress(), addresses[1].toAddress(), _inspecTxHash, _inspecState);
         } else {
+            require(isAccountUpdated(self, addresses[1].toAddress()), "The target account wasn't updated by last submitted child block");
             createChildBlockChallenge(self, addresses[0].toAddress(), addresses[1].toAddress(), bytes32(0), "");
         }
+    }
+
+    /**
+    * @dev Check whether the input account is updated by most recent
+    *      submitted block
+    * @param _targetAddress target address
+     */
+    function isAccountUpdated(StemCore.ChainStorage storage self, address _targetAddress) internal view returns (bool) {
+        for (uint i = 0; i < self.accountsBackup.length; i++) {
+            if (self.accountsBackup[i] == _targetAddress) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -128,7 +143,9 @@ library StemChallenge {
         // 0: txLeafIndex, 1: preStateLeafIndex, 2: stateLeafIndex
         RLP.RLPItem[] memory indices = _indices.toRLPItem().toList();
         RLP.RLPItem[] memory proofs = _inclusionProofs.toRLPItem().toList();
+        require(indices.length == 3 && proofs.length == 3, "Invalid indices/proofs length");
         // verify the state of target account before applying recent txs
+        // production environment
         //verifyPreState(self, _preState, proofs[1].toData(), indices[1].toUint());
         require(Merkle.checkMembership(keccak256(_recentTxs), indices[0].toUint(), self.childBlocks[self.lastChildBlockNum].txTreeRoot, proofs[0].toData()), "Failed to prove the inclusion of the txs");
         // verify recent txs and get the expected current balance
@@ -138,6 +155,7 @@ library StemChallenge {
         require(Merkle.checkMembership(keccak256(actualState), indices[1].toUint(), self.childBlocks[self.lastChildBlockNum].balanceTreeRoot, proofs[2].toData()), "Failed to prove the inclusion of the state");
 
         // respond to the block challenge successfully
+        // production environment
         //_msgSender.transfer(self.blockChallengeBond);
         // for test only
         _msgSender = 0x583031D1113aD414F02576BD6afaBfb302140225;
@@ -173,16 +191,16 @@ library StemChallenge {
         require(_splitRecentTxs.length == _splitSignatures.length);
 
         RLP.RLPItem[] memory decodedPreState = _preState.toRLPItem().toList();
+        require(decodedPreState.length == 3, "Invalid prestate length");
         require(challenge.challengeTarget == decodedPreState[0].toAddress());
 
         uint256 tempBalance = decodedPreState[1].toUint();
         uint256 tempNonce = decodedPreState[2].toUint();
+        require(isValidPreBalance(self, challenge.challengeTarget, tempBalance));
         uint256 inspecTxCount = 0;
         RLP.RLPItem[] memory decodedInspecState;
         for (uint i = 0; i < _splitRecentTxs.length; i++) {
-            tempBalance = _verifySingleTx(tempBalance, tempNonce, challenge.challengeTarget, _splitRecentTxs[i], _splitSignatures[i]);
-            tempNonce = tempNonce.add(1);
-            //TODO consider the case that inspecTxHash is nil
+            (tempNonce, tempBalance) = _verifySingleTx(tempBalance, tempNonce, challenge.challengeTarget, _splitRecentTxs[i], _splitSignatures[i]);
             if (challenge.inspecTxHash == keccak256(_splitRecentTxs[i].toBytes())) {
                 inspecTxCount = inspecTxCount.add(1);
                 //TODO: require tempBalance to be in a reasonable range
@@ -192,11 +210,39 @@ library StemChallenge {
         }
 
         // require recent txs to include inspec tx
-        if (challenge.inspecTxHash != bytes32(0)) { 
+        if (challenge.inspecTxHash != bytes32(0)) {
             require(inspecTxCount == uint256(1));
         }
-        // TODO compare tempBalance with the balance of the target account (operaters[account] or users[account])
+        // compare tempBalance with the balance of the target account (operaters[account] or users[account])
+        if (self.isExistedOperators[challenge.challengeTarget]) {
+            require(tempBalance == self.operators[challenge.challengeTarget], "Operator balance not match");
+        } else {
+            require(tempBalance == self.users[challenge.challengeTarget], "User balance not match");
+        }
         return _encodeState(challenge.challengeTarget, tempBalance, tempNonce);
+    }
+
+     /**
+    * @dev Check whether the input account is updated by most recent
+    *      submitted block
+    * @param _targetAddress target address
+     */
+    function isValidPreBalance(StemCore.ChainStorage storage self, address _targetAddress, uint256 _preBalance) internal view returns (bool) {
+        for (uint i = 0; i < self.accountsBackup.length; i++) {
+            if (self.accountsBackup[i] == _targetAddress) {
+                if (self.balancesBackup[i] == _preBalance) {
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+        }
+        if (self.isExistedOperators[_targetAddress]) {
+            return (_preBalance == self.operators[_targetAddress]);
+        } else {
+            return (_preBalance == self.users[_targetAddress]);
+        }
+        return false;
     }
 
     /**
@@ -223,7 +269,7 @@ library StemChallenge {
     * @param _signature The signature of the tx sender
     * @return the balance of target account after tx
     */
-    function _verifySingleTx(uint256 _balanceBeforeTx, uint256 _nonceBeforeTx, address _targetAccount, RLP.RLPItem memory _tx, RLP.RLPItem memory _signature) internal pure returns(uint256) {
+    function _verifySingleTx(uint256 _balanceBeforeTx, uint256 _nonceBeforeTx, address _targetAccount, RLP.RLPItem memory _tx, RLP.RLPItem memory _signature) internal pure returns(uint256, uint256) {
 
         RLP.RLPItem[] memory txItems = _tx.toList();
         address from = txItems[0].toAddress();
@@ -239,9 +285,9 @@ library StemChallenge {
         if (_targetAccount == from) {
             uint256 cost = computeCost(txItems);
             require(_balanceBeforeTx >= cost, "Balance not enough");
-            return _balanceBeforeTx.sub(cost);
+            return (nonce + 1, _balanceBeforeTx.sub(cost));
         } else {
-            return _balanceBeforeTx.add(amount);
+            return (_nonceBeforeTx, _balanceBeforeTx.add(amount));
         }
     }
 
@@ -262,7 +308,9 @@ library StemChallenge {
     */
     function removeChildBlockChallengeByIndex(StemCore.ChainStorage storage self, uint _index) internal {
         require(_index < self.childBlockChallengeId.length, "Invalid challenge index");
-        self.childBlockChallengeId[_index] = self.childBlockChallengeId[self.childBlockChallengeId.length - 1];
+        for (uint i = _index; i < self.childBlockChallengeId.length - 1; i++) {
+            self.childBlockChallengeId[i] = self.childBlockChallengeId[i + 1];
+        }
         delete self.childBlockChallengeId[self.childBlockChallengeId.length - 1];
         self.childBlockChallengeId.length--;
     }
@@ -274,6 +322,7 @@ library StemChallenge {
     function decode(bytes _inspecBlock) internal pure returns (StemCore.InspecBlock)
     {
         RLP.RLPItem[] memory inputs = _inspecBlock.toRLPItem().toList();
+        require(inputs.length == 4, "Invalid inspecBlock length");
         StemCore.InspecBlock memory decodedBlock;
 
         decodedBlock.creator = inputs[0].toAddress();

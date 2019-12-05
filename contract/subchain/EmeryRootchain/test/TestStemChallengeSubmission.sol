@@ -171,11 +171,12 @@ contract TestStemChallengeSubmission {
         byteHash = 0x0541f8a317ff1b9e13379d46f5d67062666b74eefad90431e9fe46b3ed7d723e;
         bytesArray[3] = RLPEncoding.encodeBytes(ByteUtils.bytes32ToBytes(byteHash));
         bytes memory inspecBlock = RLPEncoding.encodeList(bytesArray);
-        bytes32 inspecBlockHash = keccak256(inspecBlock);
-        emit printHash(inspecBlockHash);
-        bytes32 expected = 0xf2342278bca7d09e009b6703544a5f356b2b097dba5592999bb0f81062813c2e;
-        Assert.equal(inspecBlockHash, expected, "not match");
-        /*bytes memory inspecBlockSignature = hex"689fd4a4732083a8bcca36950816d90b96b84cad7653e56d9c0eb4454e5da69a18a162b8893362b01e747a3d6885ce3bb761086af9dc589f48c9c9e346e44ea100";
+        //bytes32 inspecBlockHash = keccak256(inspecBlock);
+        //emit printHash(inspecBlockHash);
+        //bytes32 expected = 0xf2342278bca7d09e009b6703544a5f356b2b097dba5592999bb0f81062813c2e;
+        //Assert.equal(inspecBlockHash, expected, "not match");
+        bytes memory inspecBlockSignature = hex"dd75789219027b15ca6d5ac4149feadf2a45e108d3876a48232a97b829cebf25620ca080bb6dc3eacc2825ce46f3133a4a1ecf5115371409d8d74f8cffa9a47b01";
+        //bytes memory inspecBlockSignature = hex"689fd4a4732083a8bcca36950816d90b96b84cad7653e56d9c0eb4454e5da69a18a162b8893362b01e747a3d6885ce3bb761086af9dc589f48c9c9e346e44ea100";
         byteHash = 0x4cce1aa6276215c3cea7ff379de9b1d796398cf38490164422e3dcca3df50e45;
         bytes32 p1 = 0xc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b;
         bytes32 p2 = 0xce1009a74105bfaa44931cf2052443ee19dab7e9d0d508c2b7f3abf6200204c9;
@@ -197,15 +198,15 @@ contract TestStemChallengeSubmission {
         //rootchain.challengeSubmittedBlock.value(34567890)(testAddress, inspecBlock, inspecBlockSignature, byteHash, encodedState, encodedIndices, encodedProof);
         rootchain.challengeSubmittedBlock.value(1234567890)(testAddress, inspecBlock, inspecBlockSignature, byteHash, encodedState, encodedIndices, encodedProof);
         // empty evidence
-        //rootchain.challengeSubmittedBlock.value(1234567890)(testAddress, "", "", bytes32(0), "", "", "");*/
+        //rootchain.challengeSubmittedBlock.value(1234567890)(testAddress, "", "", bytes32(0), "", "", "");
     }
 
-     /*function testAfterChallengeSubmission() public {
+    function testAfterChallengeSubmission() public {
         StemRootchain rootchain = StemRootchain(DeployedAddresses.StemRootchain());
         uint192 id = rootchain.getChallengeId(0);
         address testAddress = 0x627306090abaB3A6e1400e9345bC60c78a8BEf57;
         Assert.equal(uint(id), uint(11419712055689991657431568270872319576212033412100),"Id not match");
         Assert.equal(rootchain.getChallengeTarget(id), testAddress,"challenge target not match");
         Assert.equal(rootchain.getChallengeLen(), uint256(1), "Incorrect length of challenges");
-     }*/
+    }
 }
