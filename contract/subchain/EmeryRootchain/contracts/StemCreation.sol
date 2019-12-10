@@ -18,23 +18,25 @@ library StemCreation {
      *        The hash of the genesis tx tree root
      * @param _staticNodes The static nodes
      * @param _creatorDeposit The deposit of creator
-     * @param _ops The operators.
-     * @param _opsDeposits The deposits of operators.
-     * @param _refundAccounts The mainnet addresses of the operators
+     * @param _ops The operators. The first two accounts are used for mintAccount and meltAccount
+     * @param _opsDeposits The deposits of operators. The first two elements are not used, should be set as 0
+     * @param _refundAccounts The mainnet addresses of the operators. The first two elements are not used, should be set as address(0)
      * @param _msgSender the creator of the contract
      * @param _msgValue  value deposited into the contract
      */
     function createSubchain(StemCore.ChainStorage storage self, bytes32 _subchainName, bytes32[] _genesisInfo, bytes32[] _staticNodes, uint256 _creatorDeposit, address[] _ops, uint256[] _opsDeposits, address[]  _refundAccounts, address _msgSender, uint256 _msgValue) public {
         // initialize the storage variables
         init(self);
-        require(_ops.length >= self.MIN_LENGTH_OPERATOR && _ops.length <= self.MAX_LENGTH_OPERATOR, "Invalid operators length");
+        require(_ops.length >= self.MIN_LENGTH_OPERATOR + 2 && _ops.length <= self.MAX_LENGTH_OPERATOR + 2, "Invalid operators length");
         require(_ops.length == _opsDeposits.length, "Invalid deposits length");
         require(_ops.length == _refundAccounts.length, "Invalid length of refund accounts");
         require(_creatorDeposit >= self.creatorMinDeposit, "Insufficient creator deposit value");
         require(_genesisInfo.length == 2, "Invalid length of genesis info");
         // Setup the operators' deposits and initial fees
         self.totalDeposit = _creatorDeposit;
-        for (uint256 i = 0; i < _ops.length && StemCore.isValidAddOperator(self, _ops[i], _opsDeposits[i]); i++){
+        self.mintAccount = _ops[0];
+        self.meltAccount = _ops[1];
+        for (uint256 i = 2; i < _ops.length && StemCore.isValidAddOperator(self, _ops[i], _opsDeposits[i]); i++){
             require(self.isExistedOperators[_ops[i]] == false, "Repeated operator");
             self.operators[_ops[i]] = _opsDeposits[i];
             self.operatorFee[_ops[i]] = 0;
@@ -111,7 +113,7 @@ library StemCreation {
         // return operators' deposit
         for (i = 0; i < self.operatorIndices.length; i++) {
             acc = self.operatorIndices[i];
-            self.refundAddress[acc].transfer(self.operators[acc]);
+            self.refundAddress[acc].transfer(self.operatorFee[acc].add(self.operators[acc]));
         }
         // return the deposits in the deposit requests
         for (i = 0; i < self.depositsIndices.length; i++) {

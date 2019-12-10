@@ -269,6 +269,10 @@ contract StemRootchain {
        return data.operatorIndices.length;
     }
 
+    function getUsersLen() public view returns(uint256) {
+      return data.userIndices.length;
+    }
+
     function getCreatorDeposit() public view returns(uint256) {
        return data.creatorDeposit;
     }
@@ -383,5 +387,9 @@ contract StemRootchain {
 
     function getChildBlockTimestamp(uint256 _blockNum) public view returns(uint256) {
        return data.childBlocks[_blockNum].timestamp;
+    }
+
+    function isFrozen() public view returns(bool) {
+       return data.isFrozen;
     }
 }

@@ -55,6 +55,8 @@ library StemCore {
         uint256   creatorDeposit;
         uint256   creatorMinDeposit;
         bool      isFrozen;
+        address   mintAccount;
+        address   meltAccount;
 
         /** @dev subchain related */
         uint256 curDepositBlockNum;
@@ -218,6 +220,7 @@ library StemCore {
      */
     function isValidAddOperator(ChainStorage storage self, address _operator, uint256 _deposit) public view returns(bool){
         require(_operator != address(0), "Invalid address");
+        require(_operator != self.mintAccount && _operator != self.meltAccount, "Invalid address: mintAccount or meltAccount");
         require(_deposit >= self.operatorMinDeposit, "Insufficient deposit amount");
 
         return true;
@@ -231,6 +234,7 @@ library StemCore {
     */
     function isValidUserDeposit(ChainStorage storage self, address _user, uint256 _deposit) public view returns(bool){
         require(_user != address(0), "Invalid user address");
+        require(_user != self.mintAccount && _user != self.meltAccount, "Invalid address: mintAccount or meltAccount");
         require(_deposit >= self.userMinDeposit, "Insufficient user deposit value");
 
         return true;

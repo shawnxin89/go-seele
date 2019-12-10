@@ -190,17 +190,21 @@ library StemChallenge {
 
         require(_splitRecentTxs.length == _splitSignatures.length);
 
-        RLP.RLPItem[] memory decodedPreState = _preState.toRLPItem().toList();
-        require(decodedPreState.length == 3, "Invalid prestate length");
-        require(challenge.challengeTarget == decodedPreState[0].toAddress());
-
-        uint256 tempBalance = decodedPreState[1].toUint();
-        uint256 tempNonce = decodedPreState[2].toUint();
-        require(isValidPreBalance(self, challenge.challengeTarget, tempBalance));
+        uint256 tempBalance;
+        uint256 tempNonce;
+        (tempBalance, tempNonce) = _decodeState(_preState, challenge.challengeTarget);
+        require(isValidPreBalance(self, challenge.challengeTarget, tempBalance), "Previous balance invalid");
+        uint reqType = 0;
+        if (self.deposits[challenge.challengeTarget].blkNum > self.lastChildBlockNum.sub(self.CHILD_BLOCK_INTERVAL) && self.deposits[challenge.challengeTarget].blkNum <= self.lastChildBlockNum) {
+            reqType = 1;
+        }
+        if (self.exits[challenge.challengeTarget].blkNum > self.lastChildBlockNum.sub(self.CHILD_BLOCK_INTERVAL) && self.exits[challenge.challengeTarget].blkNum <= self.lastChildBlockNum) {
+            reqType = 2;
+        }
         uint256 inspecTxCount = 0;
         RLP.RLPItem[] memory decodedInspecState;
         for (uint i = 0; i < _splitRecentTxs.length; i++) {
-            (tempNonce, tempBalance) = _verifySingleTx(tempBalance, tempNonce, challenge.challengeTarget, _splitRecentTxs[i], _splitSignatures[i]);
+            (tempNonce, tempBalance) = _verifySingleTx(self, [reqType, i], tempBalance, tempNonce, challenge.challengeTarget, _splitRecentTxs[i], _splitSignatures[i]);
             if (challenge.inspecTxHash == keccak256(_splitRecentTxs[i].toBytes())) {
                 inspecTxCount = inspecTxCount.add(1);
                 //TODO: require tempBalance to be in a reasonable range
@@ -246,6 +250,18 @@ library StemChallenge {
     }
 
     /**
+    * @dev decode state
+    * @return Return balance and nonce value in the state
+     */
+    function _decodeState(bytes _state, address _target) internal pure returns(uint, uint){
+        RLP.RLPItem[] memory decodedState = _state.toRLPItem().toList();
+        require(decodedState.length == 3, "Invalid state length");
+        require(_target == decodedState[0].toAddress(), "State account doesn't match target account");
+
+        return (decodedState[1].toUint(), decodedState[2].toUint());
+    }
+
+    /**
     * @dev RLP encode account, balance and nonce into an account state
     * @param _account Account
     * @param _balance Balance
@@ -262,14 +278,15 @@ library StemChallenge {
 
     /**
     * @dev Verify the signature and amount of a single tx
+    * @param _indices [reqType, txIndex]. reqType: 1 - deposit, 2 - exit, 3 - other; txIndex: the tx No in the submitted txs
     * @param _balanceBeforeTx The balance of target account before tx
     * @param _nonceBeforeTx The nonce of target account before tx
     * @param _targetAccount The account the challenger wants to examine
     * @param _tx The transaction
     * @param _signature The signature of the tx sender
-    * @return the balance of target account after tx
+    * @return the nonce and balance of target account after tx
     */
-    function _verifySingleTx(uint256 _balanceBeforeTx, uint256 _nonceBeforeTx, address _targetAccount, RLP.RLPItem memory _tx, RLP.RLPItem memory _signature) internal pure returns(uint256, uint256) {
+    function _verifySingleTx(StemCore.ChainStorage storage self, uint[2] _indices, uint256 _balanceBeforeTx, uint256 _nonceBeforeTx, address _targetAccount, RLP.RLPItem memory _tx, RLP.RLPItem memory _signature) internal view returns(uint256, uint256) {
 
         RLP.RLPItem[] memory txItems = _tx.toList();
         address from = txItems[0].toAddress();
@@ -279,7 +296,19 @@ library StemChallenge {
         require(_nonceBeforeTx <= nonce, "Invalid nonce");
 
         require(_targetAccount == from || _targetAccount == to, "The target account is neither a sender nor a receiver");
-
+        if (_indices[1] == 0) {
+            if (_indices[0] == 0) {
+                require(from != self.mintAccount && from != self.meltAccount, "Should not have any deposit/exit tx");
+            }
+            if (_indices[0] == 1) {
+                require(from == self.mintAccount && self.deposits[_targetAccount].amount == amount, "Not match with deposit request");
+            }
+            if (_indices[0] == 2) {
+                require(from == self.meltAccount && self.exits[_targetAccount].amount == amount, "Not match with exit request");
+            }
+        } else {
+            require(from != self.mintAccount && from != self.meltAccount, "Should not have any deposit/exit tx");
+        }
         // verify the signature
         require(from == ECRecovery.recover(keccak256(_tx.toBytes()), _signature.toData()), "Invalid signature");
         if (_targetAccount == from) {
@@ -287,6 +316,9 @@ library StemChallenge {
             require(_balanceBeforeTx >= cost, "Balance not enough");
             return (nonce + 1, _balanceBeforeTx.sub(cost));
         } else {
+            if (from == self.meltAccount) {
+                return (_nonceBeforeTx, _balanceBeforeTx.sub(amount));
+            }
             return (_nonceBeforeTx, _balanceBeforeTx.add(amount));
         }
     }
