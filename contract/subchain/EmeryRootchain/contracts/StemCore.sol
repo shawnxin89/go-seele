@@ -116,7 +116,7 @@ library StemCore {
     */
     function createAddOperatorRequest(ChainStorage storage self, address _operator, address _refundAccount, address _msgSender, uint256 _msgValue) public {
         // production environment
-        //require(_msgSender == _operator || _msgSender == self.owner, "Requests should be sent by the operator or the creator");
+        //require(_msgSender == _refundAccount || _msgSender == self.owner, "Requests should be sent by the operator or the creator");
         require(self.isFrozen == false, "The subchain is frozen");
         require(self.IS_NEW_OPERATOR_ALLOWED, "Adding new operator is not allowed");
         require(self.isExistedOperators[_operator] == false, "Repeated operator");
@@ -149,7 +149,7 @@ library StemCore {
     */
     function createUserDepositRequest(ChainStorage storage self, address _user, address _refundAccount, address _msgSender, uint256 _msgValue) public {
         // production environment
-        //require(_msgSender == _user || _msgSender == self.owner, "Requests should be sent by the user or the creator");
+        //require(_msgSender == _refundAccount || _msgSender == self.owner, "Requests should be sent by the user or the creator");
         require(self.isFrozen == false, "The subchain is frozen");
         require(self.isExistedOperators[_user] == false, "This address has been registered as an operator");
         require(self.deposits[_user].amount == 0 || (self.deposits[_user].amount > 0 && self.deposits[_user].isOperator == false), "An addOperator request exists for this address");
@@ -319,8 +319,7 @@ library StemCore {
     * @param _operator The operator account
      */
     function createOperatorExitRequest(ChainStorage storage self, address _operator, address _msgSender) public {
-        // production environment
-        //require(_msgSender == _operator || _msgSender == self.owner, "Exit requests should be sent by the operator");
+
         require(self.isFrozen == false, "The subchain is frozen");
         require(self.isExistedOperators[_operator] || self.deposits[_operator].blkNum > self.nextChildBlockNum, "This operator does not exist and does not have any deposit request");
         require(existUnresolvedRequest(self, _operator) == false, "Another unresolved request exists for this operator");
@@ -329,6 +328,8 @@ library StemCore {
         if (self.exits[_operator].blkNum > self.nextChildBlockNum) {
             return;
         } else if (self.deposits[_operator].blkNum > self.nextChildBlockNum) {
+            // production environment
+            //require(_msgSender == self.owner || _msgSender == self.deposits[_operator].refundAccount, "Exit requests should be sent by the operator");
             // exit request and deposit request cancel out each other
             // emit an event to cancel deposit request
             self.deposits[_operator].refundAccount.transfer(self.deposits[_operator].amount);
@@ -341,6 +342,8 @@ library StemCore {
             );
             return;
         }
+        // production environment
+        //require(_msgSender == self.owner || _msgSender == self.refundAddress[_operator], "Exit requests should be sent by the operator or the owner");
 
         self.curExitBlockNum = processExitBlockNum(self);
         self.exitsIndices.push(_operator);
@@ -364,8 +367,7 @@ library StemCore {
     * @param _amount Exit amount
      */
     function createUserExitRequest(ChainStorage storage self, address _user, uint256 _amount, address _msgSender) public {
-        // production environment
-        //require(_msgSender == _user, "Exit requests should be sent by the user");
+
         require(self.isFrozen == false, "The subchain is frozen");
         require(self.isExistedUsers[_user] || self.deposits[_user].blkNum > self.nextChildBlockNum, "This user does not exist and does not has any deposit request");
         require(existUnresolvedRequest(self, _user) == false, "Another unresolved request exists for this user");
@@ -373,6 +375,8 @@ library StemCore {
         // merge existing deposit or exit requests
         uint256 exitAmount = _amount;
         if (self.exits[_user].blkNum > self.nextChildBlockNum) {
+            // production environment
+            //require(_msgSender == self.owner || _msgSender == self.refundAddress[_user], "Exit requests should be sent by the user or the owner");
             // merge current exit request with a previous exit request
             self.exits[_user].amount = self.exits[_user].amount.add(exitAmount);
             self.refundAddress[_user].transfer(self.userExitBond);
@@ -383,6 +387,9 @@ library StemCore {
             );
             return;
         } else if (self.deposits[_user].blkNum > self.nextChildBlockNum) {
+            // production environment
+            //require(_msgSender == self.owner || _msgSender == self.deposits[_user].refundAccount, "Exit requests should be sent by the user or the owner");
+
             // merge current exit request with a previous deposit request
             if (self.deposits[_user].amount < exitAmount) {
                 exitAmount = exitAmount.sub(self.deposits[_user].amount);
@@ -427,6 +434,8 @@ library StemCore {
             }
             require(self.users[_user] >= exitAmount || (index < self.accountsBackup.length && self.balancesBackup[index] >= exitAmount), "Invalid exit amount");
         }
+        // production environment
+        //require(_msgSender == self.owner || _msgSender == self.refundAddress[_user], "Exit requests should be sent by the user");
 
         self.curExitBlockNum = processExitBlockNum(self);
         self.exitsIndices.push(_user);
@@ -481,11 +490,11 @@ library StemCore {
         if (!isLastChildBlockConfirmed(self)) {return;}
         if (self.exits[_operator].executed == true) {return;}
         self.refundAddress[_operator].transfer(self.operatorFee[_operator].add(self.operators[_operator]));
+        self.totalDeposit = self.totalDeposit.sub(self.operators[_operator].add(self.operatorFee[_operator]));
         delete self.operators[_operator];
         delete self.operatorFee[_operator];
         self.isExistedOperators[_operator] = false;
         deleteOperatorIndicesByAccount(self, _operator);
-        self.totalDeposit = self.totalDeposit.sub(self.operators[_operator].add(self.operatorFee[_operator]));
         self.exits[_operator].executed = true;
 
     }

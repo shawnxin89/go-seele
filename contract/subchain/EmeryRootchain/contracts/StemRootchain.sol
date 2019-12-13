@@ -37,7 +37,14 @@ contract StemRootchain {
 
     /** @dev Reverts if called by any account other than the operator. */
     modifier onlyOperator() {
-        require(data.operators[msg.sender] > 0, "You're not the operator of the contract!");
+         bool res = false;
+         for  (uint i = 0; i < data.operatorIndices.length; i++) {
+            if (msg.sender == data.refundAddress[data.operatorIndices[i]]) {
+               res = true;
+               break;
+            }
+         }
+        require(res == true, "You're not the operator of the contract!");
         _;
     }
 
@@ -161,7 +168,7 @@ contract StemRootchain {
     */
     function feeExit(address _operator, uint256 _amount) public {
         // production environment
-        //require(msg.sender == _operator, "Exit requests should be sent from the operator");
+        //require(msg.sender == data.refundAddress[_operator], "Exit requests should be sent from the operator");
         require(data.isFrozen == false, "The subchain is frozen");
         require(data.isLastChildBlockConfirmed(), "Last block is not confirmed yet");
         require(data.operatorFee[_operator] >= _amount, "Invalid exit amount");
