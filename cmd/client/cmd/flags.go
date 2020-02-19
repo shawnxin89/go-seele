@@ -269,6 +269,20 @@ var (
 		Value:       "sha256",
 		Destination: &algorithmValue,
 	}
+
+	accountsValue string
+	accountsFlag = cli.StringFlag{
+		Name: 		  "accounts,as",
+		Usage: 		  "account array, -as account1,account2",
+		Destination:  &accountsValue,
+	}
+
+	balancesValue string
+	balancesFlag = cli.StringFlag{
+		Name: 		  "balances,bs",
+		Usage: 		  "balance array, -bs balance1,balance2",
+		Destination:  &balancesValue,
+	}
 )
 
 // GeneratePayload

@@ -123,6 +123,12 @@ func AddCommands(app *cli.App, isFullNode bool) {
 			Action: rpcAction("seele", "getReceiptByTxHash"),
 		},
 		{
+			Name:   "sbgen",
+			Usage:  "generate the genesis info of the subchain",
+			Flags:  rpcFlags(accountsFlag, balancesFlag),
+			Action: rpcAction("seele", "sbGen"),
+		},
+		{
 			Name:   "getpendingtxs",
 			Usage:  "get pending transactions",
 			Flags:  rpcFlags(),

@@ -10,12 +10,16 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/seeleteam/go-seele/common"
 	"github.com/seeleteam/go-seele/common/errors"
+	"github.com/seeleteam/go-seele/merkle"
+	"github.com/seeleteam/go-seele/rlp"
 	"github.com/seeleteam/go-seele/core/state"
 	"github.com/seeleteam/go-seele/core/types"
+	"github.com/seeleteam/go-seele/crypto"
 )
 
 // ErrInvalidAccount the account is invalid
@@ -678,4 +682,31 @@ func (api *PublicSeeleAPI) GetBlockTransactionsByHash(blockHash string) (result 
 		result = append(result, output)
 	}
 	return result, nil
+}
+
+func (api *PublicSeeleAPI) SbGen(inputAccounts string, inputBalances string) (map[string]interface{}, error) {
+
+	accounts := strings.Split(inputAccounts, ",")
+	balances := strings.Split(inputBalances, ",")
+	if len(accounts) == 0 || len(balances) == 0 || len(accounts) != len(balances) {
+		return nil, errors.New("invalid length of accounts or balances")
+	}
+	var stateHashArray []common.Hash
+	for i := 0; i < len(accounts); i++ {
+		account, _ := common.HexToAddress(accounts[i])
+		state := []interface{}{
+			account.Bytes(),
+			[]byte(balances[i]),
+			[]byte(strconv.Itoa(0)),
+		}
+		stateBytes, _ := rlp.EncodeToBytes(state)
+		stateHashArray = append(stateHashArray, crypto.Keccak256Hash(stateBytes))
+	}
+	txTreeRoot := common.EmptyHash
+	balanceTreeRoot := merkle.GetBinaryMerkleRoot(stateHashArray)
+	fields := map[string]interface{}{
+		"balanceTreeRoot": balanceTreeRoot,
+		"txTreeRoot":   txTreeRoot,
+	}
+	return fields, nil
 }
