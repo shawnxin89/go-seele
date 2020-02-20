@@ -684,7 +684,7 @@ func (api *PublicSeeleAPI) GetBlockTransactionsByHash(blockHash string) (result 
 	return result, nil
 }
 
-func (api *PublicSeeleAPI) SbGen(inputAccounts string, inputBalances string) (map[string]interface{}, error) {
+func (api *PublicSeeleAPI) SubGen(inputAccounts string, inputBalances string) (map[string]interface{}, error) {
 
 	accounts := strings.Split(inputAccounts, ",")
 	balances := strings.Split(inputBalances, ",")
