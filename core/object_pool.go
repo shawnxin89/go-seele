@@ -25,6 +25,8 @@ var (
 	errObjectNonceUsed  = errors.New("object nonce already been used")
 )
 
+var CachedCapacity = CachedBlocks * 500
+
 type blockchain interface {
 	GetCurrentState() (*state.Statedb, error)
 	GetStore() store.BlockchainStore
@@ -55,7 +57,7 @@ func newPooledItem(object poolObject) *poolItem {
 }
 
 type getObjectFromBlockFunc func(block *types.Block) []poolObject
-type canRemoveFunc func(chain blockchain, state *state.Statedb, item *poolItem) bool
+type canRemoveFunc func(chain blockchain, state *state.Statedb, item *poolItem) (bool, bool)
 type objectValidationFunc func(state *state.Statedb, obj poolObject) error
 type afterAddFunc func(obj poolObject)
 
@@ -73,11 +75,12 @@ type Pool struct {
 	canRemove          canRemoveFunc
 	objectValidation   objectValidationFunc
 	afterAdd           afterAddFunc
+	cachedTxs          *CachedTxs
 }
 
 // NewPool creates and returns a transaction pool.
 func NewPool(capacity int, chain blockchain, getObjectFromBlock getObjectFromBlockFunc,
-	canRemove canRemoveFunc, log *log.SeeleLog, objectValidation objectValidationFunc, afterAdd afterAddFunc) *Pool {
+	canRemove canRemoveFunc, log *log.SeeleLog, objectValidation objectValidationFunc, afterAdd afterAddFunc, cachedTxs *CachedTxs) *Pool {
 	pool := &Pool{
 		capacity:           capacity,
 		chain:              chain,
@@ -89,7 +92,10 @@ func NewPool(capacity int, chain blockchain, getObjectFromBlock getObjectFromBlo
 		canRemove:          canRemove,
 		objectValidation:   objectValidation,
 		afterAdd:           afterAdd,
+		// cachedTxs:          NewCachedTxs(CachedCapacity),
+		cachedTxs: cachedTxs,
 	}
+	// pool.cachedTxs.init(chain)
 
 	go pool.loopCheckingPool()
 
@@ -102,24 +108,26 @@ func (pool *Pool) SetLogLevel(level logrus.Level) {
 
 // check the pool frequently, remove finalized and old txs, reinject the txs not on the chain yet
 func (pool *Pool) loopCheckingPool() {
-	
 	for {
-		if pool.pendingQueue.count() > 0 {
+		pool.mutex.RLock()
+		pendingQueueCount := pool.pendingQueue.count()
+		pool.mutex.RUnlock()
+		if pendingQueueCount > 0 {
 			time.Sleep(10 * time.Second)
 		} else {
 			pool.removeObjects()
+			pool.mutex.Lock()
 			if len(pool.hashToTxMap) > 0 {
 				for _, poolTx := range pool.hashToTxMap {
-					pool.mutex.Lock()
 					pool.pendingQueue.add(poolTx)
-					pool.mutex.Unlock()
+					pool.afterAdd(poolTx.poolObject)
 				}
 			}
+			pool.mutex.Unlock()
 			time.Sleep(5 * time.Second)
 		}
 	}
 }
-
 
 // HandleChainHeaderChanged reinjects txs into pool in case of blockchain forked.
 func (pool *Pool) HandleChainHeaderChanged(newHeader, lastHeader common.Hash) {
@@ -347,7 +355,11 @@ func (pool *Pool) removeObjects() {
 
 	objMap := pool.getObjectMap()
 	for objHash, poolTx := range objMap {
-		if pool.canRemove(pool.chain, state, poolTx) {
+		objectRemove, cachedTxsRemove := pool.canRemove(pool.chain, state, poolTx)
+		if objectRemove {
+			if cachedTxsRemove {
+				pool.cachedTxs.remove(objHash)
+			}
 			pool.removeOject(objHash)
 		}
 	}

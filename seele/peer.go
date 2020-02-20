@@ -12,12 +12,12 @@ import (
 	"math/big"
 	"sync"
 
-	"github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/seeleteam/go-seele/common"
 	"github.com/seeleteam/go-seele/core/types"
 	"github.com/seeleteam/go-seele/log"
 	"github.com/seeleteam/go-seele/p2p"
-	"github.com/seeleteam/go-seele/seele/download"
+	downloader "github.com/seeleteam/go-seele/seele/download"
 )
 
 const (
@@ -263,7 +263,7 @@ func (p *peer) RequestBlocksByHashOrNumber(magic uint32, origin common.Hash, num
 	}
 	buff := common.SerializePanic(query)
 
-	p.log.Debug("peer send [downloader.GetBlocksMsg] query with size %d byte", len(buff))
+	p.log.Debug("peer send [downloader.GetBlocksMsg] query with size %d byte,peer:%s", len(buff), p.peerStrID)
 	return p2p.SendMessage(p.rw, downloader.GetBlocksMsg, buff)
 }
 
@@ -287,7 +287,8 @@ func (p *peer) sendBlocks(magic uint32, blocks []*types.Block) error {
 	return err
 }
 
-func (p *peer) sendHeadStatus(msg *chainHeadStatus) error {
+func (p *peer) sendHeadStatus(msg *chainHeadStatus, wg *sync.WaitGroup) error {
+	defer wg.Done()
 	buff := common.SerializePanic(msg)
 
 	p.log.Debug("peer send [statusChainHeadMsgCode] with size %d byte", len(buff))

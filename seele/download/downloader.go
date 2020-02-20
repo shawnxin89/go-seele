@@ -14,9 +14,9 @@ import (
 
 	"github.com/seeleteam/go-seele/common"
 	"github.com/seeleteam/go-seele/common/errors"
+	"github.com/seeleteam/go-seele/consensus"
 	"github.com/seeleteam/go-seele/core"
 	"github.com/seeleteam/go-seele/core/types"
-	"github.com/seeleteam/go-seele/consensus"
 	"github.com/seeleteam/go-seele/event"
 	"github.com/seeleteam/go-seele/log"
 	"github.com/seeleteam/go-seele/p2p"
@@ -133,6 +133,18 @@ func NewDownloader(chain *core.Blockchain, seele SeeleBackend) *Downloader {
 	return d
 }
 
+func (d *Downloader) IsSyncStatusNone() bool {
+	d.lock.Lock()
+
+	if d.syncStatus != statusNone {
+		d.lock.Unlock()
+		return false
+	} else {
+		d.lock.Unlock()
+		return true
+	}
+}
+
 func (d *Downloader) getReadableStatus() string {
 	var status string
 
@@ -167,7 +179,7 @@ func (d *Downloader) getSyncInfo(info *SyncInfo) {
 }
 
 // Synchronise try to sync with remote peer.
-func (d *Downloader) Synchronise(id string, head common.Hash, td *big.Int, localTD *big.Int) error {
+func (d *Downloader) Synchronise(id string, head common.Hash) error {
 	// Make sure only one routine can pass at once
 	d.lock.Lock()
 
@@ -188,18 +200,19 @@ func (d *Downloader) Synchronise(id string, head common.Hash, td *big.Int, local
 	}
 	d.lock.Unlock()
 
-	err := d.doSynchronise(p, head, td, localTD)
+	err := d.doSynchronise(p, head)
 
 	d.lock.Lock()
 	d.syncStatus = statusNone
-	d.sessionWG.Wait()
+	//d.sessionWG.Wait()
 	d.cancelCh = nil
 	d.lock.Unlock()
 
 	return err
 }
 
-func (d *Downloader) doSynchronise(conn *peerConn, head common.Hash, td *big.Int, localTD *big.Int) (err error) {
+//td *big.Int, localTD *big.Int
+func (d *Downloader) doSynchronise(conn *peerConn, head common.Hash) (err error) {
 	d.log.Debug("Downloader.doSynchronise start, masterID: %s", d.masterPeer)
 	event.BlockDownloaderEventManager.Fire(event.DownloaderStartEvent)
 	defer func() {
@@ -221,34 +234,33 @@ func (d *Downloader) doSynchronise(conn *peerConn, head common.Hash, td *big.Int
 
 	ancestor, err := d.findCommonAncestorHeight(conn, height)
 	if err != nil {
+		conn.peer.DisconnectPeer("peerDownload anormaly")
 		return err
 	}
-
-	localHeight, localBlocks, err := d.reverseBCstore(ancestor)
+	d.log.Debug("find ancestor at  %d reverseBCstore", ancestor)
+	localHeight, localTD, localBlocks, err := d.reverseBCstore(ancestor)
+	d.log.Debug("reverse to ancestor %d localHeight %d backup %d localBlocks", ancestor, localHeight, len(localBlocks))
 	if err != nil {
 		return err
 	}
 
 	d.log.Debug("Downloader.doSynchronise start task manager from height=%d, target height=%d master=%s", ancestor, height, d.masterPeer)
-	tm := newTaskMgr(d, d.masterPeer, conn, ancestor+1, height, localHeight, localBlocks)
+	tm := newTaskMgr(d, d.masterPeer, conn, ancestor+1, height, localHeight, localTD, localBlocks)
 	d.tm = tm
 
 	bMasterStarted := false
 	d.lock.Lock()
 	d.syncStatus = statusFetching
-	for _, pConn := range d.peers {
-		_, peerTD := pConn.peer.Head()
-		if localTD.Cmp(peerTD) >= 0 {
-			continue
-		}
-		d.sessionWG.Add(1)
-		if pConn.peerID == d.masterPeer {
-			d.log.Debug("Downloader.doSynchronise set bMasterStarted = true masterid=%s", d.masterPeer)
-			bMasterStarted = true
-		}
 
-		go d.peerDownload(pConn, tm)
+	//d.sessionWG.Add(1)
+	sessionWG := new(sync.WaitGroup)
+	sessionWG.Add(1)
+	if conn.peerID == d.masterPeer {
+		d.log.Debug("Downloader.doSynchronise set bMasterStarted = true masterid=%s", d.masterPeer)
+		bMasterStarted = true
 	}
+	go d.peerDownload(conn, tm, sessionWG)
+	//}
 	d.lock.Unlock()
 
 	if !bMasterStarted {
@@ -258,7 +270,7 @@ func (d *Downloader) doSynchronise(conn *peerConn, head common.Hash, td *big.Int
 	} else {
 		d.log.Debug("Downloader.doSynchronise bMasterStarted = %t.  not cancel. masterid=%s", bMasterStarted, d.masterPeer)
 	}
-	d.sessionWG.Wait()
+	sessionWG.Wait()
 
 	d.lock.Lock()
 	d.syncStatus = statusCleaning
@@ -291,7 +303,7 @@ func (d *Downloader) fetchHeight(conn *peerConn) (*types.BlockHeader, error) {
 
 func verifyBlockHeadersMsg(msg interface{}, head common.Hash) (*types.BlockHeader, error) {
 	headers := msg.([]*types.BlockHeader)
-	if len(headers) < 1 { 
+	if len(headers) < 1 {
 		return nil, errInvalidPacketReceived
 	}
 
@@ -325,7 +337,7 @@ func (d *Downloader) findCommonAncestorHeight(conn *peerConn, height uint64) (ui
 		}
 
 		// Get peer block headers
-		headers, err := d.getPeerBlockHaders(conn, localTop, fetchCount)
+		headers, err := d.getPeerBlockHeaders(conn, localTop, fetchCount)
 		if err != nil {
 			return 0, err
 		}
@@ -376,7 +388,7 @@ func getFetchCount(maxFetchAncestry, cmpCount uint64) uint64 {
 	return fetchCount
 }
 
-func (d *Downloader) getPeerBlockHaders(conn *peerConn, localTop, fetchCount uint64) ([]*types.BlockHeader, error) {
+func (d *Downloader) getPeerBlockHeaders(conn *peerConn, localTop, fetchCount uint64) ([]*types.BlockHeader, error) {
 	magic := rand2.Uint32()
 	go conn.peer.RequestHeadersByHashOrNumber(magic, common.EmptyHash, localTop, int(fetchCount), true)
 
@@ -417,10 +429,10 @@ func (d *Downloader) RegisterPeer(peerID string, peer Peer) {
 	newConn := newPeerConn(peer, peerID, d.log)
 	d.peers[peerID] = newConn
 
-	if d.syncStatus == statusFetching {
-		d.sessionWG.Add(1)
-		go d.peerDownload(newConn, d.tm)
-	}
+	//if d.syncStatus == statusFetching {
+	//	d.sessionWG.Add(1)
+	//	go d.peerDownload(newConn, d.tm)
+	//}
 }
 
 // UnRegisterPeer remove peer from download routine
@@ -467,8 +479,8 @@ func (d *Downloader) Terminate() {
 }
 
 // peerDownload peer download routine
-func (d *Downloader) peerDownload(conn *peerConn, tm *taskMgr) {
-	defer d.sessionWG.Done()
+func (d *Downloader) peerDownload(conn *peerConn, tm *taskMgr, sessionWG *sync.WaitGroup) {
+	defer sessionWG.Done()
 
 	d.log.Debug("Downloader.peerDownload start. peerID=%s masterID=%s", conn.peerID, d.masterPeer)
 	isMaster := (conn.peerID == d.masterPeer)
@@ -566,23 +578,37 @@ outLoop:
 }
 
 // processBlocks writes blocks to the blockchain.
-func (d *Downloader) processBlocks(headInfos []*downloadInfo, ancestor uint64, localHeight uint64, localBlocks []*types.Block, conn *peerConn) {
+func (d *Downloader) processBlocks(headInfos []*downloadInfo, ancestor uint64, localHeight uint64, localTD *big.Int, localBlocks []*types.Block, conn *peerConn) {
+	if len(headInfos) > 0 {
+		d.log.Info(" [%d] blocks will be processed into local database", len(headInfos))
+	}
 	for _, h := range headInfos {
 		// add it for all received block messages
 		d.log.Info("got block message and save it. height=%d, hash=%s, time=%d", h.block.Header.Height, h.block.HeaderHash.Hex(), time.Now().UnixNano())
+		// writeblock
+		txPool := d.seele.TxPool().Pool
+		err := d.chain.WriteBlock(h.block, txPool)
 
-		if err := d.chain.WriteBlock(h.block); err != nil && !errors.IsOrContains(err, core.ErrBlockAlreadyExists) {
+		if err != nil && !errors.IsOrContains(err, core.ErrBlockAlreadyExists) {
 			d.log.Error("failed to write block err=%s", err)
-			// recover local blocks if localHeight is larger than the synchronized height
-			d.log.Debug("localheight: %d, current block: %d", localHeight, d.chain.CurrentBlock().Header.Height)
-			if localHeight > h.block.Header.Height - 1 {
-				_, _, err = d.reverseBCstore(ancestor)
+			// recover local blocks if localTotalDifficulty is larger than the synchronized total difficulty
+			// if writeblock fails in the middle (the whole process not successfully completed), then we need to consider write back our localblocks
+			// if localblock totaldifficult is larger than the break point's one. It means this sync attempt should be abonded
+			// get local block
+			bcStore := d.chain.GetStore()
+			currentBlock := d.chain.CurrentBlock()
+			currentTD, errTD := bcStore.GetBlockTotalDifficulty(currentBlock.HeaderHash)
+			d.log.Debug("localTD %d currenTD %d\n", localTD, currentTD)
+			d.log.Debug("localHeight(%d)> h.block.Header.Height-1(%d)? %t\n", localHeight, h.block.Header.Height-1, localHeight > h.block.Header.Height-1)
+			if errTD != nil || localTD.Cmp(currentTD) > 0 { // should abandon this sync!
+				d.log.Info("abandon sync and start to reverse bcstore to ancestor=%d without saving localblocks", ancestor)
+				_, _, _, err = d.reverseBCstore(ancestor)
 				if err != nil {
 					d.log.Error("failed to reverse synced blocks err=%s", err)
 				}
 				for _, localBlock := range localBlocks {
 					d.log.Info("write back local blocks: %d", localBlock.Header.Height)
-					if err = d.chain.WriteBlock(localBlock); err != nil {
+					if err = d.chain.WriteBlock(localBlock, txPool); err != nil {
 						d.log.Error("failed to write localBlock back err=%s, height: %d", err, localBlock.Header.Height)
 						break
 					}
@@ -601,58 +627,58 @@ func (d *Downloader) processBlocks(headInfos []*downloadInfo, ancestor uint64, l
 
 // reverse the chain back to the common ancestor of local node and peer
 // TODO: keep the blocks of local node after the common ancestor
-func (d *Downloader) reverseBCstore(ancestor uint64) (uint64, []*types.Block, error) {
-
+func (d *Downloader) reverseBCstore(ancestor uint64) (uint64, *big.Int, []*types.Block, error) {
 	localCurBlock := d.chain.CurrentBlock()
 	localHeight := localCurBlock.Header.Height
 	curHeight := localHeight
-	bcStore := d.chain.GetStore()
 	localBlocks := make([]*types.Block, 0)
-		
+	bcStore := d.chain.GetStore()
+	var localTD *big.Int
+	var errTD error
+	if localTD, errTD = bcStore.GetBlockTotalDifficulty(localCurBlock.HeaderHash); errTD != nil {
+		return localHeight, localTD, localBlocks, errTD
+	}
 	for curHeight > ancestor {
-		// delete blockleaves
-		if localHeight == curHeight {
-			d.chain.RemoveBlockLeaves(localCurBlock.HeaderHash)
-		}
 		hash, err := bcStore.GetBlockHash(curHeight)
-
 		d.log.Debug("reverse curHeight: %d, hash: %v", curHeight, hash)
 		if err != nil {
-			return localHeight, localBlocks, errors.NewStackedErrorf(err, "failed to get block hash by height %v", curHeight)
+			return localHeight, localTD, localBlocks, errors.NewStackedErrorf(err, "failed to get block hash by height %v", curHeight)
 		}
 
 		block, err := bcStore.GetBlock(hash)
 		if err != nil {
-			return localHeight, localBlocks, errors.NewStackedErrorf(err, "failed to get block by hash %v", hash)
+			return localHeight, localTD, localBlocks, errors.NewStackedErrorf(err, "failed to get block by hash %v", hash)
 		}
+
+		// delete blockleaves
+		d.chain.RemoveBlockLeaves(hash)
 
 		// use last block as the temporary chain head
 		err = d.updateHeadInfo(curHeight - 1)
 		if err != nil {
-			return localHeight, localBlocks, errors.NewStackedErrorf(err, "failed to update head info while reversing the chain")
+			return localHeight, localTD, localBlocks, errors.NewStackedErrorf(err, "failed to update head info while reversing the chain")
 		}
 
 		// save the local blocks
 		localBlocks = append([]*types.Block{block}, localBlocks...)
-		
+
 		// reinject the block objects to the pool
 		d.seele.TxPool().HandleChainReversed(block)
 		d.seele.DebtPool().HandleChainReversed(block)
 
 		if err = bcStore.DeleteBlock(hash); err != nil {
-			return localHeight, localBlocks, errors.NewStackedErrorf(err, "failed to delete block %v", block.HeaderHash)
+			return localHeight, localTD, localBlocks, errors.NewStackedErrorf(err, "failed to delete block %v", block.HeaderHash)
 		}
 
 		// delete the block hash in canonical chain.
 		_, err = bcStore.DeleteBlockHash(curHeight)
 		if err != nil {
-			return localHeight, localBlocks, errors.NewStackedErrorf(err, "failed to delete block hash by height %v", curHeight)
+			return localHeight, localTD, localBlocks, errors.NewStackedErrorf(err, "failed to delete block hash by height %v", curHeight)
 		}
 
 		curHeight--
 	}
-	
-	return localHeight, localBlocks, nil
+	return localHeight, localTD, localBlocks, nil
 
 }
 
@@ -685,6 +711,6 @@ func (d *Downloader) updateHeadInfo(height uint64) error {
 	d.chain.AddBlockLeaves(blockIndex)
 	d.chain.UpdateCurrentBlock(curBlock)
 	d.log.Debug("update current block: %d, hash: %v", curBlock.Header.Height, curBlock.HeaderHash)
-	
+
 	return nil
 }

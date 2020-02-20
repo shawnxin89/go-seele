@@ -26,13 +26,13 @@ const (
 	responseTimeout = 20 * time.Second
 
 	pingpongConcurrentNumber = 5
-	pingpongInterval         = 30 * time.Second // sleep between ping pong, must big than response time out
+	pingpongInterval         = 25 * time.Second // sleep between ping pong, must big than response time out
 
 	discoveryConcurrentNumber = 5
-	discoveryInterval         = 35 * time.Second // sleep between discovery, must big than response time out
+	discoveryInterval         = 25 * time.Second // sleep between discovery, must big than response time out
 
 	// a node will be delete after n continuous time out.
-	timeoutCountForDeleteNode = 8
+	timeoutCountForDeleteNode = 16
 )
 
 type udp struct {
@@ -271,11 +271,13 @@ func (u *udp) readLoop() {
 		n, remoteAddr, err := u.conn.ReadFromUDP(data)
 		if err != nil {
 			u.log.Warn("failed to discover reading from udp %s", err)
+			
 			continue
 		}
 
 		data = data[:n]
 		u.handleMsg(remoteAddr, data)
+
 	}
 }
 
@@ -292,7 +294,7 @@ func (u *udp) loopReply() {
 		for el := pendingList.Front(); el != nil; el = el.Next() {
 			p := el.Value.(*pending)
 			duration := p.deadline.Sub(now)
-			if duration < 0 {
+			if duration <= 0 {
 			} else {
 				if duration < minTime {
 					minTime = duration
@@ -352,6 +354,8 @@ func (u *udp) discovery() {
 		id, err := crypto.GenerateRandomAddress()
 		if err != nil {
 			u.log.Error(err.Error())
+			//pause a little bit
+			time.Sleep(1*time.Second)
 			continue
 		}
 
@@ -483,14 +487,17 @@ func (u *udp) addNode(n *Node, notifyConnect bool) {
 	}
 
 	count := u.db.size()
-	u.table.addNode(n)
-	u.db.add(n, notifyConnect)
 
-	newCount := u.db.size()
-	if count != newCount {
-		u.log.Info("add node %s, total nodes:%d", n, newCount)
-	} else {
-		u.log.Debug("got add node event, but it is already exist. total nodes didn't change:%d", newCount)
+	status := u.table.addNode(n)
+	if status {
+		u.db.add(n, notifyConnect)
+
+		newCount := u.db.size()
+		if count != newCount {
+			u.log.Info("add node %s, total nodes:%d", n, newCount)
+		} else {
+			u.log.Debug("got add node event, but it is already exist. total nodes didn't change:%d", newCount)
+		}
 	}
 }
 

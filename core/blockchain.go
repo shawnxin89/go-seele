@@ -132,7 +132,7 @@ func NewBlockchain(bcStore store.BlockchainStore, accountStateDB database.Databa
 		if err != nil {
 			return nil, errors.NewStackedError(err, "failed to get HEAD block hash")
 		}
-	} else { 
+	} else {
 		// start from a specified height
 		curHeight := uint64(startHeight)
 		currentHeaderHash, err = bcStore.GetBlockHash(curHeight)
@@ -151,6 +151,9 @@ func NewBlockchain(bcStore store.BlockchainStore, accountStateDB database.Databa
 		return nil, errors.NewStackedErrorf(err, "failed to get HEAD block by hash %v", currentHeaderHash)
 	}
 	bc.currentBlock.Store(currentBlock)
+
+	// recover height-to-block mapping
+	bc.recoverHeightIndices()
 
 	td, err := bcStore.GetBlockTotalDifficulty(currentHeaderHash)
 	if err != nil {
@@ -254,9 +257,9 @@ func (bc *Blockchain) GetCurrentInfo() (*types.Block, *state.Statedb, error) {
 }
 
 // WriteBlock writes the specified block to the blockchain store.
-func (bc *Blockchain) WriteBlock(block *types.Block) error {
+func (bc *Blockchain) WriteBlock(block *types.Block, txPool *Pool) error {
 	startWriteBlockTime := time.Now()
-	if err := bc.doWriteBlock(block); err != nil {
+	if err := bc.doWriteBlock(block, txPool); err != nil {
 		return err
 	}
 	markTime := time.Since(startWriteBlockTime)
@@ -269,7 +272,7 @@ func (bc *Blockchain) WriteHeader(*types.BlockHeader) error {
 	return ErrNotSupported
 }
 
-func (bc *Blockchain) doWriteBlock(block *types.Block) error {
+func (bc *Blockchain) doWriteBlock(block *types.Block, pool *Pool) error {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 
@@ -328,6 +331,15 @@ func (bc *Blockchain) doWriteBlock(block *types.Block) error {
 		Transactions: make([]*types.Transaction, len(block.Transactions)),
 	}
 	copy(currentBlock.Transactions, block.Transactions)
+	for i, tx := range block.Transactions { // for 1st tx is reward tx, no need to check the duplicate
+		if i == 0 {
+			continue
+		}
+		if !pool.cachedTxs.has(tx.Hash) {
+			bc.log.Debug("[CachedTxs] add tx %+v from synced block", tx.Hash)
+			pool.cachedTxs.add(tx)
+		}
+	}
 
 	if block.Debts != nil {
 		currentBlock.Debts = make([]*types.Debt, len(block.Debts))
@@ -341,7 +353,7 @@ func (bc *Blockchain) doWriteBlock(block *types.Block) error {
 
 	currentTd := new(big.Int).Add(previousTd, block.Header.Difficulty)
 	blockIndex := NewBlockIndex(currentBlock.HeaderHash, currentBlock.Header.Height, currentTd)
-	isHead := bc.blockLeaves.IsBestBlockIndex(blockIndex)
+	isHead := true
 	auditor.Audit("succeed to prepare block index")
 
 	/////////////////////////////////////////////////////////////////
@@ -376,13 +388,13 @@ func (bc *Blockchain) doWriteBlock(block *types.Block) error {
 	if isHead {
 		largerHeight := block.Header.Height + 1
 		if err = DeleteLargerHeightBlocks(bc.bcStore, largerHeight, bc.rp); err != nil {
-			return errors.NewStackedErrorf(err, "failed to delete larger height blocks, height = %v", largerHeight)
+			bc.log.Error(errors.NewStackedErrorf(err, "failed to delete larger height blocks, height = %v", largerHeight).Error())
 		}
 		auditor.Audit("succeed to delete larger height blocks, height = %v", largerHeight)
 
 		previousHash := block.Header.PreviousBlockHash
 		if err = OverwriteStaleBlocks(bc.bcStore, previousHash, bc.rp); err != nil {
-			return errors.NewStackedErrorf(err, "failed to overwrite stale blocks, hash = %v", previousHash)
+			bc.log.Error(errors.NewStackedErrorf(err, "failed to overwrite stale blocks, hash = %v", previousHash).Error())
 		}
 		auditor.Audit("succeed to overwrite stale blocks, hash = %v", previousHash)
 	}
@@ -487,9 +499,12 @@ func (bc *Blockchain) applyTxs(block *types.Block, root common.Hash) (*state.Sta
 	}
 
 	//validate debts
-	err = types.BatchValidateDebt(block.Debts, bc.debtVerifier)
-	if err != nil {
-		return nil, nil, errors.NewStackedError(err, "failed to batch validate debt")
+	// fix the issue caused by forking from collapse database
+	if block.Height() > common.HeightRoof || block.Height() < common.HeightFloor {
+		err = types.BatchValidateDebt(block.Debts, bc.debtVerifier)
+		if err != nil {
+			return nil, nil, errors.NewStackedError(err, "failed to batch validate debt")
+		}
 	}
 
 	// update debts
@@ -538,7 +553,7 @@ func (bc *Blockchain) applyRewardAndRegularTxs(statedb *state.Statedb, rewardTx 
 	for i, tx := range regularTxs {
 		txIdx := i + 1
 
-		if err := tx.ValidateState(statedb); err != nil {
+		if err := tx.ValidateState(statedb, blockHeader.Height); err != nil {
 			return nil, errors.NewStackedErrorf(err, "failed to validate tx[%v] against statedb", txIdx)
 		}
 
@@ -564,7 +579,7 @@ func (bc *Blockchain) ApplyTransaction(tx *types.Transaction, txIndex int, coinb
 		BlockHeader: blockHeader,
 		BcStore:     bc.bcStore,
 	}
-	receipt, err := svm.Process(ctx)
+	receipt, err := svm.Process(ctx, blockHeader.Height)
 	if err != nil {
 		return nil, errors.NewStackedError(err, "failed to process tx via svm")
 	}
@@ -599,7 +614,7 @@ func (bc *Blockchain) ApplyDebtWithoutVerify(statedb *state.Statedb, d *types.De
 	if d.Fee().Sign() < 0 {
 		return types.ErrAmountNegative
 	}
-	
+
 	statedb.AddBalance(d.Data.Account, d.Data.Amount)
 	statedb.AddBalance(coinbase, d.Fee())
 
@@ -758,4 +773,41 @@ func (bc *Blockchain) PutTd(td *big.Int) {
 
 func (bc *Blockchain) GetHeadRollbackEventManager() *event.EventManager {
 	panic("Not Supported")
+}
+
+func (bc *Blockchain) recoverHeightIndices() {
+	bc.log.Info("checking blockchain database...")
+	curBlock := bc.CurrentBlock()
+	curHeight := curBlock.Header.Height
+	chainHeight := curHeight
+	curHash := curBlock.Header.Hash()
+	numGetBlockByHeight := 0
+	numGetBlockByHash := 0
+	numIrrecoverable := 0
+	for curHeight > 0 {
+		bc.log.Debug("checking blockchain database, height: %d", curHeight)
+		if curBlock, err := bc.bcStore.GetBlockByHeight(curHeight); err != nil {
+			bc.log.Error("height: %d, can't get block by height.", curHeight)
+			if curBlock, err = bc.bcStore.GetBlock(curHash); err != nil {
+				bc.log.Error("height: %d, can't get block by hash %v.", curHeight, curHash)
+				curHash = common.EmptyHash
+				numIrrecoverable++
+			} else {
+				// get block by hash successfully
+				// recover the heightToBlock map
+				bc.log.Info("height: %d, try to recover block by hash %v.", curHeight, curHash)
+				if err := bc.bcStore.RecoverHeightToBlockMap(curBlock); err != nil {
+					bc.log.Error("height: %d, can't recover block by hash %v.", curHeight, curHash)
+				}
+				curHash = curBlock.Header.PreviousBlockHash
+				numGetBlockByHash++
+			}
+		} else {
+			// get block by height successfully
+			curHash = curBlock.Header.PreviousBlockHash
+			numGetBlockByHeight++
+		}
+		curHeight--
+	}
+	bc.log.Info("Blockchain database checked, chainHeight: %d, numGetBlockByHeight: %d, numGetBlockByHash: %d, numIrrecoverable: %d", chainHeight, numGetBlockByHeight, numGetBlockByHash, numIrrecoverable)
 }

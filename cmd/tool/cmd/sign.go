@@ -7,12 +7,9 @@
 
  import (
 	 "fmt"
-	 "encoding/json"
 	 "encoding/hex"
 
-	 "github.com/seeleteam/go-seele/common/hexutil"
 	 "github.com/seeleteam/go-seele/crypto"
-	 "github.com/seeleteam/go-seele/core/types"
 	 "github.com/spf13/cobra"
  )
  
@@ -33,25 +30,12 @@
 			fmt.Printf("failed to load the private key: %s\n", err.Error())
 			return
 		}
-		 
-		messageBytes := []byte(nil)
-		if len(message) > 0 {
-			if messageBytes, err = hexutil.HexToBytes(message); err != nil {
-				fmt.Errorf("invalid message, %s", err)
-			}
-		}
-
-		//messageHash := crypto.MustHash(messageBytes)
-		messageHash := crypto.Keccak256Hash(messageBytes)
+		messageBytes := []byte(message)
+		messageHash := crypto.MustHash(messageBytes)
 		signature := *crypto.MustSign(key, messageHash.Bytes())
-		var tx = types.Transaction{}
-		tx.Signature = signature
-
-		result, _ := json.MarshalIndent(tx, "", "\t")
-
-		fmt.Println(string(result))
+		
 		fmt.Println("message")
-		fmt.Println(hex.EncodeToString(messageBytes))
+		fmt.Println(message)
 		fmt.Println("message hash")
 		fmt.Println(hex.EncodeToString(messageHash.Bytes()))
 		fmt.Println("signature")

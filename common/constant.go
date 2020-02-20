@@ -21,6 +21,9 @@ const (
 	// SeeleVersion Version number of Seele protocol
 	SeeleVersion uint = 1
 
+	// SeeleVersion for simpler display
+	SeeleNodeVersion string = "v1.3.1"
+
 	// ShardCount represents the total number of shards.
 	ShardCount = 4
 
@@ -39,6 +42,11 @@ const (
 	// ForkHeight after this height we change the content of block: hardFork
 	SecondForkHeight = 145000
 
+	// ForkHeight after this height we change the validation of tx: hardFork
+	ThirdForkHeight = 735000
+
+	SmartContractNonceForkHeight = 1100000
+
 	// LightChainDir lightchain data directory based on config.DataRoot
 	LightChainDir = "/db/lightchain"
 
@@ -48,7 +56,7 @@ const (
 	// Sha256Algorithm miner algorithm sha256
 	Sha256Algorithm = "sha256"
 
-	// spow miner algorithm 
+	// spow miner algorithm
 	SpowAlgorithm = "spow"
 
 	// BFT mineralgorithm
@@ -62,6 +70,10 @@ const (
 
 	// BlockPackInterval it's an estimate time.
 	BlockPackInterval = 15 * time.Second
+
+	// Height: fix the issue caused by forking from collapse database
+	HeightFloor = uint64(707989)
+	HeightRoof  = uint64(707996)
 
 	WindowsPipeDir = `\\.\pipe\`
 

@@ -31,14 +31,15 @@ func NewDebtPool(chain blockchain, verifier types.DebtVerifier) *DebtPool {
 	getObjectFromBlock := func(block *types.Block) []poolObject {
 		return debtsToObjects(block.Debts)
 	}
-
-	canRemove := func(chain blockchain, state *state.Statedb, item *poolItem) bool {
+	// 1st bool: can remove from object pool
+	// 2nd bool: can remove from cachedTxs
+	canRemove := func(chain blockchain, state *state.Statedb, item *poolItem) (bool, bool) {
 		debtIndex, err := chain.GetStore().GetDebtIndex(item.GetHash())
 		if err != nil || debtIndex == nil {
-			return false
+			return false, false
 		}
 
-		return true
+		return true, false
 	}
 
 	objectValidation := func(state *state.Statedb, obj poolObject) error {
@@ -51,8 +52,8 @@ func NewDebtPool(chain blockchain, verifier types.DebtVerifier) *DebtPool {
 
 		event.DebtsInsertedEventManager.Fire(obj.(*types.Debt))
 	}
-
-	pool := NewPool(DebtPoolCapacity, chain, getObjectFromBlock, canRemove, log, objectValidation, afterAdd)
+	cachedTxs := NewCachedTxs(0)
+	pool := NewPool(DebtPoolCapacity, chain, getObjectFromBlock, canRemove, log, objectValidation, afterAdd, cachedTxs)
 
 	debtPool := &DebtPool{
 		Pool:             pool,
@@ -91,7 +92,11 @@ func (dp *DebtPool) DoMulCheckingDebt() error {
 	tmp := dp.toConfirmedDebts.getList()
 	len := len(tmp)
 	threads := runtime.NumCPU() / 2
+<<<<<<< HEAD
 	dp.log.Info("use %d threads to validate debts\n", threads)
+=======
+	dp.log.Info("use %d threads to validate debts", threads)
+>>>>>>> 806233a2574b21914be6d0914369e86cb0586671
 	// single thread for few CPU kernel or few txs to validate.
 	if threads <= 1 || len < threads {
 		for i := 0; i < len; i++ {

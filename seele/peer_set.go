@@ -7,6 +7,7 @@ package seele
 
 import (
 	"math/big"
+	rand "math/rand"
 	"sync"
 
 	"github.com/seeleteam/go-seele/common"
@@ -34,7 +35,7 @@ func newPeerSet() *peerSet {
 func (p *peerSet) bestPeer(shard uint) *peer {
 	var bestPeer *peer
 	var bestHash common.Hash
-	bestTd := big.NewInt(0)	
+	bestTd := big.NewInt(0)
 
 	peers := p.getPeerByShard(shard)
 	for _, peer := range peers {
@@ -47,34 +48,41 @@ func (p *peerSet) bestPeer(shard uint) *peer {
 	return bestPeer
 }
 
-func (p *peerSet) bestPeers(shard uint) []*peer {
-	var bestPeers []*peer
-	
+func (p *peerSet) bestPeers(shard uint, localTD *big.Int) []*peer {
+
+	var bestPeers [3]*peer
 	peers := p.getPeerByShard(shard)
 
-	peersMap := make(map[common.Address]bool)
-	// the number of best peers
 	NumOfBestPeers := 3
 	if len(peers) < NumOfBestPeers {
 		NumOfBestPeers = len(peers)
 	}
-	i := 0
-	for i < NumOfBestPeers {
-		bestTd := big.NewInt(0)
-		var bestPeer *peer
-		for _, peer := range peers {
-			if peersMap[peer.peerID] == true {
-				continue
-			}			
-			if _, td := peer.Head(); bestPeer == nil || td.Cmp(bestTd) > 0 {
-				bestPeer, bestTd = peer, td
-			} 
+
+	count := 0
+	for _, peer := range peers {
+
+		if _, td := peer.Head(); td.Cmp(localTD) > 0 {
+			if count < NumOfBestPeers {
+				bestPeers[count] = peer
+				count++
+			} else {
+				for i := 0; i < count; i++ {
+					if _, TD := bestPeers[i].Head(); td.Cmp(TD) > 0 {
+						bestPeers[i] = peer
+						break
+					}
+
+				}
+			}
+
 		}
-		bestPeers = append(bestPeers, bestPeer)
-		peersMap[bestPeer.peerID] = true
-		i++
+
 	}
-	return bestPeers
+	var bestpeers []*peer
+	for i := 0; i < count; i++ {
+		bestpeers = append(bestpeers, bestPeers[i])
+	}
+	return bestpeers
 
 }
 
@@ -103,8 +111,7 @@ func (p *peerSet) Add(pe *peer) {
 	address := pe.Node.ID
 	result := p.peerMap[address]
 	if result != nil {
-		delete(p.peerMap, address)
-		delete(p.shardPeers[result.Node.Shard], address)
+		return
 	}
 
 	p.peerMap[address] = pe
@@ -144,4 +151,33 @@ func (p *peerSet) getPeerCountByShard(shard uint) int {
 	defer p.lock.RUnlock()
 
 	return len(p.shardPeers[shard])
+}
+func (p *peerSet) getPropagatePeers() []*peer {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+
+	var value []*peer
+
+	index := 0
+	for i := 1; i < 1+common.ShardCount; i++ {
+		if len(p.shardPeers[i]) > 0 {
+			va := make([]*peer, len(p.shardPeers[i]))
+			index = 0
+			for _, v := range p.shardPeers[i] {
+				va[index] = v
+				index++
+			}
+			per := rand.Perm(len(p.shardPeers[i]))
+			index = 0
+			for k := 0; k < len(p.shardPeers[i]); k++ {
+				value = append(value, va[per[k]])
+				index++
+				if index > maxProgatePeerPerShard {
+					break
+				}
+			}
+		}
+	}
+
+	return value
 }

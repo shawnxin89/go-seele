@@ -59,6 +59,8 @@ type peer struct {
 	blockNumBegin   uint64        // first block number of blockHashArr
 	blockHashArr    []common.Hash // block hashes that should be identical with remote server peer, and is only useful in client mode.
 	updatedAncestor uint64
+
+	lastAnnounceCodeTime int64
 	log             *log.SeeleLog
 }
 
@@ -78,6 +80,7 @@ func newPeer(version uint, p *p2p.Peer, rw p2p.MsgReadWriter, log *log.SeeleLog,
 		protocolManager: protocolManager,
 		log:             log,
 		updatedAncestor: uint64(0),
+		lastAnnounceCodeTime: int64(0),
 	}
 }
 
@@ -149,7 +152,7 @@ func (p *peer) findAncestor() (uint64, error) {
 		}
 		if localBlock.HeaderHash == curHash {
 			if curNum < p.updatedAncestor {
-				p.log.Debug("update Ancestor, from %d to %d", curNum, p.updatedAncestor)
+				p.log.Debug("peer: %v, update Ancestor, from %d to %d", p.peerID.Hex(), curNum, p.updatedAncestor)
 				curNum = p.updatedAncestor
 			}
 			return curNum, nil
@@ -315,7 +318,7 @@ func (p *peer) sendAnnounceQuery(magic uint32, begin uint64, end uint64) error {
 	}
 
 	buff := common.SerializePanic(query)
-	p.log.Debug("peer send [announceRequestCode] query with size %d byte", len(buff))
+	p.log.Debug("peer send [announceRequestCode] query with size %d byte,magic:%s, peer:%s", len(buff),magic,p.peerStrID)
 	return p2p.SendMessage(p.rw, announceRequestCode, buff)
 }
 

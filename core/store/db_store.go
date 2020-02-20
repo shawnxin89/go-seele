@@ -178,11 +178,14 @@ func (store *blockchainDatabase) putBlockInternal(hash common.Hash, header *type
 
 		if err == nil {
 			oldBlock, err := store.GetBlock(oldHash)
-			if err != nil {
+
+			if err != nil && err != errors.ErrNotFound {
 				return err
 			}
 
-			store.batchDeleteIndices(batch, oldHash, oldBlock.Transactions, oldBlock.Debts)
+			if err == nil {
+				store.batchDeleteIndices(batch, oldHash, oldBlock.Transactions, oldBlock.Debts)
+			}
 		}
 
 		// add or update txs/debts indices of new HEAD block
@@ -228,6 +231,18 @@ func (store *blockchainDatabase) GetBlockTotalDifficulty(hash common.Hash) (*big
 
 	return td, nil
 }
+
+func (store *blockchainDatabase) RecoverHeightToBlockMap(block *types.Block) error {
+	batch := store.db.NewBatch()
+	// add or update txs/debts indices of this block
+	store.batchAddIndices(batch, block.HeaderHash, block.Transactions, block.Debts)
+	// update height to hash map in the chain
+	hashBytes := block.HeaderHash.Bytes()
+	batch.Put(heightToHashKey(block.Header.Height), hashBytes)
+	return batch.Commit()
+}
+
+
 
 // PutBlock serializes the given block with the specified total difficulty into the blockchain database.
 // isHead indicates if the block is the header block
@@ -461,7 +476,7 @@ func (store *blockchainDatabase) batchDeleteIndices(batch database.Batch, blockH
 	for _, tx := range txs {
 		idx, err := store.GetTxIndex(tx.Hash)
 		if err != nil {
-			return err
+			continue
 		}
 
 		if idx.BlockHash.Equal(blockHash) {
