@@ -1,3 +1,8 @@
+
+# ALERT:  Seele Team and Seele Foudation's cooperation will end at 24:00 (PDT), April 30, 2020. Unfortunately, due to funding issues, Seele Team will terminate the development and maintainance of Seele’s only official repository, `seeleteam/go-seele`. Future voluntary contributions are welcome. Seele Team will no longer be responsible for any risks involved with maintenance after said date.
+
+---
+
 # go-seele
 [![Build Status](https://travis-ci.org/seeleteam/go-seele.svg?branch=master)](https://travis-ci.org/seeleteam/go-seele)
 
@@ -60,7 +65,7 @@ buildall.bat
 # Run Seele
 A simple version Seele mining tutorial: English-[SeeleMiningTutorial](https://github.com/seeleteam/go-seele/releases/tag/v1.0.1-MiningTutorial_Eng), 中文-[Seele挖矿教程中文简版](https://github.com/seeleteam/go-seele/releases/tag/v1.0.1-%E4%B8%AD%E6%96%87%E7%AE%80%E7%89%88%E6%8C%96%E7%9F%BF%E6%95%99%E7%A8%8B).
 
-For running a node, please refer to [Get Started](https://seeletech.gitbook.io/wiki/developer/getting-started-with-seele)([Older version](https://seeleteam.github.io/seele-doc/docs/Getting-Started-With-Seele.html)).
+For running a node, please refer to [Get Started](https://seeletech.gitbook.io/wiki/developer/go-seele/gettingstarted)([Older version](https://seeleteam.github.io/seele-doc/docs/Getting-Started-With-Seele.html)).
 For more usage details and deeper explanations, please consult the [Seele Wiki](https://seeletech.gitbook.io/wiki/)([Older version](https://seeleteam.github.io/seele-doc/index.html)).
 
 # Contribution
